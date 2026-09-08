@@ -43,7 +43,6 @@ export function totalIntegrantes(cantidadAdherentes: number): number {
   return 1 + Math.max(0, cantidadAdherentes);
 }
 
-// Mantenemos esta función para que la interfaz gráfica (UI) sepa qué etiqueta mostrar
 export function determinarGrupo(cantidadAdherentes: number): string {
   return cantidadAdherentes <= 0 ? 'Individual' : 'Grupo Familiar';
 }
@@ -100,14 +99,12 @@ function mapPlanNumber(nombrePlan: string): string {
   return match ? match[1] : '';
 }
 
-// Nueva función de búsqueda exacta por edad
 function precioPorEdad(
   precios: PrecioSumaSalud[],
   planNum: string,
   grupo: string,
   edad: number
 ): number {
-  // Si ponen una edad mayor a 100, buscamos el tope de 100
   const edadBusqueda = edad > 100 ? 100 : edad;
   
   const row = precios.find(
@@ -130,14 +127,12 @@ export function calcularPrecioPlan(
   const desglose: string[] = [];
   let total = 0;
 
-  // 1. El Titular SIEMPRE busca su precio en la fila 'Individual'
   const precioTitular = precioPorEdad(precios, planNum, 'Individual', input.edad_mayor);
   total += precioTitular;
   desglose.push(`Titular (edad ${input.edad_mayor}): ${formatCurrency(precioTitular)}`);
 
-  // 2. Los Adherentes SIEMPRE buscan su precio en la fila 'Grupo Familiar'
   input.edades_adherentes.forEach((edad, i) => {
-    if (edad >= 0) { // Permite adherentes recién nacidos (0 años)
+    if (edad >= 0) {
       const precioAdherente = precioPorEdad(precios, planNum, 'Grupo Familiar', edad);
       total += precioAdherente;
       desglose.push(`Adherente ${i + 1} (edad ${edad}): ${formatCurrency(precioAdherente)}`);
@@ -263,4 +258,13 @@ export function calcularCotizacion(
     precioTotal,
     detalle,
   };
+}
+
+export function formatCurrency(value: number): string {
+  return new Intl.NumberFormat('es-AR', {
+    style: 'currency',
+    currency: 'ARS',
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0,
+  }).format(value);
 }
