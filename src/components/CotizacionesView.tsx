@@ -288,11 +288,11 @@ export function generarDocumentoPDF(data: any) {
           <h3>Hoy contamos con:</h3>
           <div class="stats-grid">
             <div class="stat-item">
-              <div class="stat-num">+100mil</div>
+              <div class="stat-num">+1000</div>
               <div class="stat-desc">Profesionales de la salud a tu disposición</div>
             </div>
             <div class="stat-item">
-              <div class="stat-num">+4.000</div>
+              <div class="stat-num">+70</div>
               <div class="stat-desc">Clínicas, sanatorios y centros de diagnóstico</div>
             </div>
             <div class="stat-item orange">
