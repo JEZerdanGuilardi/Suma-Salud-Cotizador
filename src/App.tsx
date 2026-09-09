@@ -9,11 +9,37 @@ import type { Cotizacion, Profile } from '@/lib/types';
 import {
   FileText, Building2, Table2, LogOut, Loader2, Users, TrendingUp, Phone,
   X, CheckCircle2, Target, Award, BarChart3, Clock, DollarSign, Trophy,
-  AlertTriangle, PieChart, Calendar as CalendarIcon, Upload, CalendarClock, PhoneCall, Trash2, FileSpreadsheet,
-  User, MessageSquare, Briefcase, ChevronLeft, ChevronRight, Plus, ShieldCheck, UserPlus, Mail, Lock
+  AlertTriangle, PieChart as PieChartIcon, Calendar as CalendarIcon, Upload, PhoneCall, Trash2,
+  MessageSquare, Briefcase, ChevronLeft, ChevronRight, ShieldCheck, UserPlus, Mail, Lock, Check, Gift
 } from 'lucide-react';
+import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from 'recharts';
 
 type Tab = 'cotizaciones' | 'planes' | 'monotributo' | 'contactos' | 'admin';
+
+// Helper robusto que lee la base de datos con los nombres exactos (cantidad_hijos)
+function getAdherentesCount(c: any): number {
+  if (c.edades_hijos) {
+    if (Array.isArray(c.edades_hijos)) return c.edades_hijos.length;
+    if (typeof c.edades_hijos === 'string') {
+      try { return JSON.parse(c.edades_hijos).length; } catch(e){}
+      if (c.edades_hijos.includes(',')) return c.edades_hijos.split(',').filter((x: string) => x.trim()).length;
+    }
+  }
+  
+  if (c.cantidad_hijos !== undefined && c.cantidad_hijos !== null) {
+    return Number(c.cantidad_hijos);
+  }
+
+  for (const key in c) {
+    if (key.toLowerCase().includes('adherente') || key.toLowerCase().includes('hijo')) {
+      const valor = c[key];
+      if (typeof valor === 'number') return valor;
+      if (Array.isArray(valor)) return valor.length;
+    }
+  }
+
+  return 0;
+}
 
 function AppContent() {
   const { session, profile, loading, signOut } = useAuth();
@@ -25,7 +51,6 @@ function AppContent() {
   const currentRole = profile?.role || 'vendedor';
   const isJefe = currentRole === 'jefe';
   const isSupervisor = currentRole === 'supervisor';
-  const isSenior = currentRole === 'vendedor_senior';
 
   const loadCotizaciones = useCallback(async () => {
     setLoadingCots(true);
@@ -42,7 +67,7 @@ function AppContent() {
   const tabs: { id: Tab; label: string; icon: React.ReactNode; show: boolean }[] = [
     { id: 'cotizaciones', label: 'Cotizaciones', icon: <FileText className="w-4 h-4" />, show: true },
     { id: 'planes', label: 'Planes', icon: <Building2 className="w-4 h-4" />, show: true },
-    { id: 'monotributo', label: 'Monotributo', icon: <Table2 className="w-4 h-4" />, show: true },
+    { id: 'monotributo', label: 'Escala de Monotributos', icon: <Table2 className="w-4 h-4" />, show: true },
     { id: 'contactos', label: 'Bases y Leads', icon: <CalendarIcon className="w-4 h-4" />, show: true },
     { id: 'admin', label: isJefe || isSupervisor ? 'Gerencia y Control' : 'Mi Progreso', icon: <BarChart3 className="w-4 h-4" />, show: true },
   ];
@@ -105,20 +130,14 @@ function AppContent() {
 // ==========================================
 function ContactosManager({ profile }: { profile: Profile }) {
   const isJefeOrSup = profile.role === 'jefe' || profile.role === 'supervisor';
-  
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [selectedDate, setSelectedDate] = useState(new Date());
-  
   const [vendedores, setVendedores] = useState<Profile[]>([]);
   const [selectedVendedores, setSelectedVendedores] = useState<string[]>([]);
   const [pastedData, setPastedData] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
-
   const [loadMode, setLoadMode] = useState<'individual' | 'masiva'>(isJefeOrSup ? 'masiva' : 'individual');
-  const [singleLead, setSingleLead] = useState({
-    nombre: '', telefono: '', edad: '', modalidad: 'Prepago', notas: '', asignadoA: isJefeOrSup ? 'auto' : profile.email
-  });
-
+  const [singleLead, setSingleLead] = useState({ nombre: '', telefono: '', edad: '', modalidad: 'Prepago', notas: '', asignadoA: isJefeOrSup ? 'auto' : profile.email });
   const [leads, setLeads] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -144,10 +163,7 @@ function ContactosManager({ profile }: { profile: Profile }) {
   useEffect(() => {
     if (isJefeOrSup) {
       supabase.from('profiles').select('*').in('role', ['vendedor', 'vendedor_senior']).then(({ data }) => {
-        if (data) {
-          setVendedores(data);
-          setSelectedVendedores(data.map(v => v.email)); 
-        }
+        if (data) { setVendedores(data); setSelectedVendedores(data.map(v => v.email)); }
       });
     }
   }, [isJefeOrSup]);
@@ -156,10 +172,7 @@ function ContactosManager({ profile }: { profile: Profile }) {
     const file = e.target.files?.[0];
     if (!file) return;
     const reader = new FileReader();
-    reader.onload = (evt) => {
-      const text = evt.target?.result as string;
-      if (text) setPastedData(prev => prev ? prev + '\n' + text : text);
-    };
+    reader.onload = (evt) => { const text = evt.target?.result as string; if (text) setPastedData(prev => prev ? prev + '\n' + text : text); };
     reader.readAsText(file);
     if (fileInputRef.current) fileInputRef.current.value = ''; 
   };
@@ -167,136 +180,59 @@ function ContactosManager({ profile }: { profile: Profile }) {
   const handleBulkLoad = async () => {
     if (!pastedData.trim()) return alert("Pegá los datos o subí un archivo CSV primero.");
     if (isJefeOrSup && selectedVendedores.length === 0) return alert("Seleccioná al menos un vendedor.");
-
     setSaving(true);
     const lines = pastedData.split('\n').map(l => l.trim()).filter(l => l.length > 0);
     const newLeads = [];
     let turnIndex = 0;
-
     for (let i = 0; i < lines.length; i++) {
       const parts = lines[i].split(/[,;\t-]/);
       const nombre = parts[0]?.trim() || `Contacto Desconocido ${Math.floor(Math.random()*1000)}`;
       const telefono = parts[1]?.trim() || 'Sin teléfono';
       const asignadoA = isJefeOrSup ? selectedVendedores[turnIndex % selectedVendedores.length] : profile.email;
       const fechaAgenda = getSafeDateString(selectedDate);
-
-      newLeads.push({
-        nombre, telefono, asignado: asignadoA || 'Sin asignar', estado: 'Nuevo', modalidad: 'Prepago',
-        fecha_agenda: fechaAgenda
-      });
+      newLeads.push({ nombre, telefono, asignado: asignadoA || 'Sin asignar', estado: 'Nuevo', modalidad: 'Prepago', fecha_agenda: fechaAgenda });
       turnIndex++;
     }
-
     const { error } = await supabase.from('leads').insert(newLeads);
     setSaving(false);
-    
-    if (error) {
-      alert(`Error al guardar: ${error.message}`);
-    } else {
-      setPastedData('');
-      loadLeads();
-    }
+    if (error) { alert(`Error al guardar: ${error.message}`); } else { setPastedData(''); loadLeads(); }
   };
 
   const handleSingleLoad = async () => {
     if (!singleLead.telefono.trim()) return alert("El teléfono es obligatorio.");
     setSaving(true);
-    
     let asignadoA = singleLead.asignadoA;
-    if (isJefeOrSup && asignadoA === 'auto') {
-      asignadoA = vendedores.length > 0 ? vendedores[Math.floor(Math.random() * vendedores.length)].email : profile.email;
-    }
-
-    const payload = {
-      nombre: singleLead.nombre.trim() || 'Sin nombre',
-      telefono: singleLead.telefono.trim(),
-      edad: singleLead.edad.trim(),
-      modalidad: singleLead.modalidad,
-      notas: singleLead.notas.trim(),
-      asignado: asignadoA,
-      estado: 'Nuevo',
-      fecha_agenda: getSafeDateString(selectedDate)
-    };
-
+    if (isJefeOrSup && asignadoA === 'auto') { asignadoA = vendedores.length > 0 ? vendedores[Math.floor(Math.random() * vendedores.length)].email : profile.email; }
+    const payload = { nombre: singleLead.nombre.trim() || 'Sin nombre', telefono: singleLead.telefono.trim(), edad: singleLead.edad.trim(), modalidad: singleLead.modalidad, notas: singleLead.notas.trim(), asignado: asignadoA, estado: 'Nuevo', fecha_agenda: getSafeDateString(selectedDate) };
     const { error } = await supabase.from('leads').insert([payload]);
     setSaving(false);
-
-    if (error) {
-      alert(`Error al guardar: ${error.message}`);
-    } else {
-      setSingleLead({ nombre: '', telefono: '', edad: '', modalidad: 'Prepago', notas: '', asignadoA: isJefeOrSup ? 'auto' : profile.email });
-      loadLeads();
-    }
+    if (error) { alert(`Error al guardar: ${error.message}`); } else { setSingleLead({ nombre: '', telefono: '', edad: '', modalidad: 'Prepago', notas: '', asignadoA: isJefeOrSup ? 'auto' : profile.email }); loadLeads(); }
   };
 
-  const handleEstadoChange = async (id: string, nuevoEstado: string) => {
-    setLeads(leads.map(l => l.id === id ? { ...l, estado: nuevoEstado } : l));
-    await supabase.from('leads').update({ estado: nuevoEstado }).eq('id', id);
-  };
-
-  const handleFechaChange = async (id: string, nuevaFecha: string) => {
-    setLeads(leads.map(l => l.id === id ? { ...l, fecha_agenda: nuevaFecha } : l));
-    await supabase.from('leads').update({ fecha_agenda: nuevaFecha }).eq('id', id);
-  };
-
-  const handleDelete = async (id: string) => {
-    if(!confirm("¿Eliminar este contacto?")) return;
-    setLeads(leads.filter(l => l.id !== id));
-    await supabase.from('leads').delete().eq('id', id);
-  };
+  const handleDelete = async (id: string) => { if(!confirm("¿Eliminar este contacto?")) return; setLeads(leads.filter(l => l.id !== id)); await supabase.from('leads').delete().eq('id', id); };
 
   const prevMonth = () => setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() - 1, 1));
   const nextMonth = () => setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 1));
   
   const getDaysArray = () => {
-    const year = currentMonth.getFullYear();
-    const month = currentMonth.getMonth();
-    const firstDay = new Date(year, month, 1).getDay();
-    const startDay = firstDay === 0 ? 6 : firstDay - 1;
+    const year = currentMonth.getFullYear(); const month = currentMonth.getMonth();
+    const firstDay = new Date(year, month, 1).getDay(); const startDay = firstDay === 0 ? 6 : firstDay - 1;
     const daysInMonth = new Date(year, month + 1, 0).getDate();
-
     const days = [];
     for (let i = 0; i < startDay; i++) days.push(null);
     for (let i = 1; i <= daysInMonth; i++) days.push(i);
     return days;
   };
 
-  const isToday = (day: number) => {
-    const today = new Date();
-    return day === today.getDate() && currentMonth.getMonth() === today.getMonth() && currentMonth.getFullYear() === today.getFullYear();
-  };
-
-  const isSelected = (day: number) => {
-    return day === selectedDate.getDate() && currentMonth.getMonth() === selectedDate.getMonth() && currentMonth.getFullYear() === selectedDate.getFullYear();
-  };
-
-  const handleDayClick = (day: number) => {
-    setSelectedDate(new Date(currentMonth.getFullYear(), currentMonth.getMonth(), day));
-  };
-
-  const formatMonthYear = (date: Date) => {
-    const months = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
-    return `${months[date.getMonth()]} De ${date.getFullYear()}`;
-  };
-
-  const formatFullDate = (date: Date) => {
-    const days = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
-    const months = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
-    return `${days[date.getDay()]}, ${date.getDate()} De ${months[date.getMonth()]} De ${date.getFullYear()}`;
-  };
-
-  const handleDateInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const [y, m, d] = e.target.value.split('-');
-    if (y && m && d) {
-      const newDate = new Date(Number(y), Number(m) - 1, Number(d));
-      setSelectedDate(newDate);
-      setCurrentMonth(new Date(newDate.getFullYear(), newDate.getMonth(), 1)); 
-    }
-  };
+  const isToday = (day: number) => { const today = new Date(); return day === today.getDate() && currentMonth.getMonth() === today.getMonth() && currentMonth.getFullYear() === today.getFullYear(); };
+  const isSelected = (day: number) => { return day === selectedDate.getDate() && currentMonth.getMonth() === selectedDate.getMonth() && currentMonth.getFullYear() === selectedDate.getFullYear(); };
+  const handleDayClick = (day: number) => { setSelectedDate(new Date(currentMonth.getFullYear(), currentMonth.getMonth(), day)); };
+  const formatMonthYear = (date: Date) => { const months = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre']; return `${months[date.getMonth()]} De ${date.getFullYear()}`; };
+  const formatFullDate = (date: Date) => { const days = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado']; const months = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre']; return `${days[date.getDay()]}, ${date.getDate()} De ${months[date.getMonth()]} De ${date.getFullYear()}`; };
+  const handleDateInputChange = (e: React.ChangeEvent<HTMLInputElement>) => { const [y, m, d] = e.target.value.split('-'); if (y && m && d) { const newDate = new Date(Number(y), Number(m) - 1, Number(d)); setSelectedDate(newDate); setCurrentMonth(new Date(newDate.getFullYear(), newDate.getMonth(), 1)); } };
 
   const strSelectedDate = getSafeDateString(selectedDate);
-  const misLeads = (isJefeOrSup ? leads : leads.filter(l => (l.asignado || '').toLowerCase() === profile.email.toLowerCase()))
-                   .filter(l => l.fecha_agenda === strSelectedDate || (!l.fecha_agenda && isToday(selectedDate.getDate())));
+  const misLeads = (isJefeOrSup ? leads : leads.filter(l => (l.asignado || '').toLowerCase() === profile.email.toLowerCase())).filter(l => l.fecha_agenda === strSelectedDate || (!l.fecha_agenda && isToday(selectedDate.getDate())));
 
   return (
     <div className="max-w-7xl mx-auto space-y-6">
@@ -316,25 +252,14 @@ function ContactosManager({ profile }: { profile: Profile }) {
             <div className="text-base font-semibold text-white">{formatMonthYear(currentMonth)}</div>
             <button onClick={nextMonth} className="p-2 text-slate-400 hover:text-white"><ChevronRight className="w-5 h-5"/></button>
           </div>
-
           <div className="grid grid-cols-7 gap-y-4 text-center">
-            {['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'].map(d => (
-              <div key={d} className="text-xs font-medium text-slate-500">{d}</div>
-            ))}
+            {['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'].map(d => ( <div key={d} className="text-xs font-medium text-slate-500">{d}</div> ))}
             {getDaysArray().map((day, index) => {
               if (!day) return <div key={`empty-${index}`}></div>;
-              const isSel = isSelected(day);
-              const isTod = isToday(day);
+              const isSel = isSelected(day); const isTod = isToday(day);
               return (
                 <div key={day} className="flex justify-center">
-                  <button
-                    onClick={() => handleDayClick(day)}
-                    className={`w-10 h-10 rounded-xl flex items-center justify-center text-sm transition-all ${
-                      isSel ? 'bg-blue-600 text-white shadow-[0_0_15px_rgba(37,99,235,0.4)] font-bold' : isTod ? 'border border-blue-500/50 text-blue-400 font-bold' : 'text-slate-300 hover:bg-slate-800'
-                    }`}
-                  >
-                    {day}
-                  </button>
+                  <button onClick={() => handleDayClick(day)} className={`w-10 h-10 rounded-xl flex items-center justify-center text-sm transition-all ${ isSel ? 'bg-blue-600 text-white shadow-[0_0_15px_rgba(37,99,235,0.4)] font-bold' : isTod ? 'border border-blue-500/50 text-blue-400 font-bold' : 'text-slate-300 hover:bg-slate-800' }`}>{day}</button>
                 </div>
               );
             })}
@@ -370,22 +295,14 @@ function ContactosManager({ profile }: { profile: Profile }) {
               <div className="flex-1 space-y-3 flex flex-col">
                 <div className="flex items-center gap-3 bg-blue-500/5 border border-blue-500/20 p-3 rounded-xl">
                   <CalendarIcon className="w-4 h-4 text-blue-400"/>
-                  <div className="text-xs text-slate-300 flex-1">Los contactos masivos se agendarán para el día:</div>
+                  <div className="text-xs text-slate-300 flex-1">Los masivos se agendarán para:</div>
                   <input type="date" value={getSafeDateString(selectedDate)} onChange={handleDateInputChange} className="bg-slate-900 border border-blue-500/50 rounded-lg px-2 py-1 text-xs text-blue-300 focus:border-blue-400 outline-none" />
                 </div>
-                
                 <div className="flex items-center justify-between mt-2">
-                  <span className="text-xs text-slate-400">Pegar lista o cargar archivo delimitado por comas:</span>
+                  <span className="text-xs text-slate-400">Pegar lista o cargar archivo .CSV:</span>
                   <input type="file" accept=".csv,.txt" ref={fileInputRef} onChange={handleFileUpload} className="hidden" />
-                  <button 
-                    type="button" 
-                    onClick={() => fileInputRef.current?.click()} 
-                    className="flex items-center gap-2 bg-blue-600/20 hover:bg-blue-600/30 text-blue-400 border border-blue-500/30 px-3 py-1.5 rounded-lg text-xs font-medium transition-all"
-                  >
-                    <Upload className="w-3.5 h-3.5" /> Subir archivo .CSV
-                  </button>
+                  <button type="button" onClick={() => fileInputRef.current?.click()} className="flex items-center gap-2 bg-blue-600/20 hover:bg-blue-600/30 text-blue-400 border border-blue-500/30 px-3 py-1.5 rounded-lg text-xs font-medium transition-all"><Upload className="w-3.5 h-3.5" /> Subir archivo</button>
                 </div>
-
                 <textarea value={pastedData} onChange={(e) => setPastedData(e.target.value)} className="w-full flex-1 bg-slate-950/50 border border-slate-700 rounded-xl px-4 py-3 text-sm text-white font-mono resize-none min-h-[120px] outline-none" placeholder={`Ejemplo:\nJuan Perez, 2614567890`} />
               </div>
               {isJefeOrSup && (
@@ -406,31 +323,23 @@ function ContactosManager({ profile }: { profile: Profile }) {
 
       <div className="bg-[#0f1523] border border-slate-800 rounded-2xl p-6 shadow-xl min-h-[250px] w-full">
         <h3 className="text-base font-semibold text-white mb-5">{formatFullDate(selectedDate)} <span className="text-sm font-normal text-slate-400 ml-2">({misLeads.length} agendados)</span></h3>
-        
         <div className="space-y-4">
-          {loading ? (
-             <div className="text-center py-8 text-slate-500"><Loader2 className="w-5 h-5 animate-spin mx-auto"/></div>
-          ) : misLeads.length === 0 ? (
-             <div className="text-center py-10 text-slate-500">No hay agendamientos para esta fecha.</div>
-          ) : (
+          {loading ? ( <div className="text-center py-8 text-slate-500"><Loader2 className="w-5 h-5 animate-spin mx-auto"/></div> ) : misLeads.length === 0 ? ( <div className="text-center py-10 text-slate-500">No hay agendamientos para esta fecha.</div> ) : (
             misLeads.map(lead => {
-              const statusColors: Record<string, string> = {
-                'Nuevo': 'border-sky-500/30 bg-sky-500/10 text-sky-400',
-                'No responde': 'border-red-500/30 bg-red-500/10 text-red-400',
-                'Llamar luego': 'border-amber-500/30 bg-amber-500/10 text-amber-400',
-                'En gestión': 'border-violet-500/30 bg-violet-500/10 text-violet-400',
-                'Descartado': 'border-slate-500/30 bg-slate-500/10 text-slate-400'
-              };
-
-              const cleanPhone = lead.telefono.replace(/\D/g, '');
-              const waLink = `https://wa.me/${cleanPhone.startsWith('54') ? cleanPhone : '549' + cleanPhone}`;
-              const telLink = `tel:${cleanPhone}`;
-
+              const statusColors: Record<string, string> = { 'Nuevo': 'border-sky-500/30 bg-sky-500/10 text-sky-400', 'No responde': 'border-red-500/30 bg-red-500/10 text-red-400', 'Llamar luego': 'border-amber-500/30 bg-amber-500/10 text-amber-400', 'En gestión': 'border-violet-500/30 bg-violet-500/10 text-violet-400', 'Descartado': 'border-slate-500/30 bg-slate-500/10 text-slate-400' };
+              const cleanPhone = lead.telefono.replace(/\D/g, ''); const waLink = `https://wa.me/${cleanPhone.startsWith('54') ? cleanPhone : '549' + cleanPhone}`; const telLink = `tel:${cleanPhone}`;
               return (
                 <div key={lead.id} className="bg-slate-900/50 border border-slate-800 rounded-xl p-4 transition-colors">
                   <div className="flex justify-between items-start mb-3">
                     <div className="flex flex-col gap-1">
-                      <div className="text-base font-bold text-white">{lead.nombre !== 'Sin nombre' ? lead.nombre : 'Contacto sin nombre'}</div>
+                      <div className="flex items-center gap-2">
+                        <div className="text-base font-bold text-white">{lead.nombre !== 'Sin nombre' ? lead.nombre : 'Contacto sin nombre'}</div>
+                        {lead.modalidad && (
+                          <span className="px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider bg-blue-500/10 text-blue-400 border border-blue-500/20">
+                            {lead.modalidad}
+                          </span>
+                        )}
+                      </div>
                       <div className="flex flex-wrap items-center gap-2 mt-1">
                         <a href={telLink} className="flex items-center gap-1.5 bg-blue-500/15 hover:bg-blue-500/25 text-blue-400 border border-blue-500/30 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors"><Phone className="w-3.5 h-3.5" /> Llamar</a>
                         <a href={waLink} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-400 border border-emerald-500/30 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors"><MessageSquare className="w-3.5 h-3.5" /> WhatsApp</a>
@@ -439,20 +348,15 @@ function ContactosManager({ profile }: { profile: Profile }) {
                     </div>
                     <button onClick={() => handleDelete(lead.id)} className="p-1.5 text-slate-500 hover:text-red-400 transition-colors"><Trash2 className="w-4 h-4"/></button>
                   </div>
-                  
                   <div className="flex flex-wrap items-center gap-3 mb-3">
                     <select value={lead.estado} onChange={async (e) => { const val = e.target.value; setLeads(leads.map(l => l.id === lead.id ? { ...l, estado: val } : l)); await supabase.from('leads').update({ estado: val }).eq('id', lead.id); }} className={`text-xs px-2.5 py-1.5 rounded-lg border outline-none cursor-pointer font-medium ${statusColors[lead.estado] || statusColors['Nuevo']}`}>
                       <option value="Nuevo" className="bg-slate-900">Nuevo</option><option value="No responde" className="bg-slate-900">No responde</option><option value="En gestión" className="bg-slate-900">En gestión</option><option value="Llamar luego" className="bg-slate-900">Llamar luego</option><option value="Descartado" className="bg-slate-900">Descartado</option>
                     </select>
-
                     <div className="text-xs text-slate-400 flex items-center gap-x-3 gap-y-1">
-                      <div className="flex items-center gap-1.5 bg-slate-950 px-2 py-1.5 rounded-lg border border-slate-800">
-                        <CalendarIcon className="w-3.5 h-3.5 text-slate-500" /><input type="date" value={lead.fecha_agenda || getSafeDateString(new Date())} onChange={(e) => handleFechaChange(lead.id, e.target.value)} className="bg-transparent text-slate-300 focus:outline-none w-[100px]" title="Mover a otra fecha" />
-                      </div>
+                      <div className="flex items-center gap-1.5 bg-slate-950 px-2 py-1.5 rounded-lg border border-slate-800"><CalendarIcon className="w-3.5 h-3.5 text-slate-500" /><input type="date" value={lead.fecha_agenda || getSafeDateString(new Date())} onChange={(e) => { const val = e.target.value; setLeads(leads.map(l => l.id === lead.id ? { ...l, fecha_agenda: val } : l)); supabase.from('leads').update({ fecha_agenda: val }).eq('id', lead.id); }} className="bg-transparent text-slate-300 focus:outline-none w-[100px]" title="Mover a otra fecha" /></div>
                       {lead.edad && <span className="flex items-center gap-1.5"><Clock className="w-3.5 h-3.5 text-slate-500" /> {lead.edad} años</span>}
                     </div>
                   </div>
-
                   {lead.notas && (<div className="text-sm text-slate-400 flex gap-2.5 mt-2 bg-slate-950/50 p-3 rounded-xl border border-slate-800/50"><MessageSquare className="w-4 h-4 mt-0.5 shrink-0 text-slate-500" /><span className="leading-relaxed italic">{lead.notas}</span></div>)}
                   {isJefeOrSup && <div className="text-[10px] text-slate-600 mt-3 pt-3 border-t border-slate-800/50 font-medium">Asignado a: {lead.asignado}</div>}
                 </div>
@@ -466,7 +370,7 @@ function ContactosManager({ profile }: { profile: Profile }) {
 }
 
 // ==========================================
-// 👑 PANEL DE JEFE (Visión Global y Finanzas)
+// 👑 PANEL DE JEFE (Comisiones Avanzadas y Cápitas)
 // ==========================================
 function JefeView({ cotizaciones, onReload }: { cotizaciones: Cotizacion[]; onReload: () => void }) {
   const [showCreateUser, setShowCreateUser] = useState(false);
@@ -497,7 +401,65 @@ function JefeView({ cotizaciones, onReload }: { cotizaciones: Cotizacion[]; onRe
   const ganadas = dataFiltrada.filter(c => c.etapa === 'Cerrado ganado');
   const perdidas = dataFiltrada.filter(c => c.etapa === 'Cerrado perdido');
   const winRate = ganadas.length > 0 ? Math.round((ganadas.length / (ganadas.length + perdidas.length)) * 100) : 0;
-  const volumenTotal = ganadas.reduce((acc, c) => acc + Number(c.precio_total || 0), 0);
+  const volumenBruto = ganadas.reduce((acc, c) => acc + Number(c.precio_total || 0), 0);
+  
+  const capitasTotales = ganadas.reduce((acc, c) => acc + 1 + getAdherentesCount(c), 0);
+
+  // Lógica de rangos y porcentajes de cápitas solicitados
+  let multiplicador = 1.5;
+  let bonosSalto = 0;
+  let rangoTexto = "0-25 cápitas";
+  let estadoCapitas = "Preocupante";
+  let colorCapitas = "text-amber-400";
+  let bgCapitas = "bg-amber-400/10 border-amber-400/20";
+  let porcentajeCapitas = "150%";
+  let limiteSiguiente = 25;
+  let proximoRangoStr = "200%";
+  
+  if (capitasTotales >= 26 && capitasTotales <= 50) {
+    multiplicador = 2.0; 
+    bonosSalto = 400000; 
+    rangoTexto = "25-50 cápitas";
+    estadoCapitas = "Promedio";
+    colorCapitas = "text-emerald-400";
+    bgCapitas = "bg-emerald-400/10 border-emerald-400/20";
+    porcentajeCapitas = "200%";
+    proximoRangoStr = "250%"; 
+    limiteSiguiente = 50;
+  } else if (capitasTotales >= 51 && capitasTotales <= 100) {
+    multiplicador = 2.5; 
+    bonosSalto = 800000; 
+    rangoTexto = "50-100 cápitas";
+    estadoCapitas = "Óptimo y bueno";
+    colorCapitas = "text-blue-400";
+    bgCapitas = "bg-blue-400/10 border-blue-400/20";
+    porcentajeCapitas = "250%";
+    proximoRangoStr = "300%"; 
+    limiteSiguiente = 100;
+  } else if (capitasTotales >= 101) {
+    multiplicador = 3.0; 
+    bonosSalto = 1200000; 
+    rangoTexto = "100+ cápitas";
+    estadoCapitas = "Excepcional";
+    colorCapitas = "text-purple-400";
+    bgCapitas = "bg-purple-400/10 border-purple-400/20";
+    porcentajeCapitas = "300%";
+    proximoRangoStr = "MAX"; 
+    limiteSiguiente = 0;
+  } else {
+    // 0 a 25 cápitas
+    multiplicador = 1.5;
+    bonosSalto = 0;
+    rangoTexto = "0-25 cápitas";
+    estadoCapitas = "Preocupante";
+    colorCapitas = "text-yellow-400";
+    bgCapitas = "bg-yellow-400/10 border-yellow-400/20";
+    porcentajeCapitas = "150%";
+    proximoRangoStr = "200%";
+    limiteSiguiente = 25;
+  }
+
+  const gananciaGlobalJefe = (volumenBruto * multiplicador) + bonosSalto;
 
   const statsVendedores: Record<string, { ganadas: number; comisiones: number; nombre: string }> = {};
   const planesVendidos: Record<string, number> = {};
@@ -513,9 +475,7 @@ function JefeView({ cotizaciones, onReload }: { cotizaciones: Cotizacion[]; onRe
     }
     
     statsVendedores[email].ganadas += 1;
-    const prof = profiles.find(p => p.email.toLowerCase() === email.toLowerCase());
-    const umbral = prof?.role === 'supervisor' ? 10 : (prof?.role === 'vendedor_senior' ? 10 : 10);
-    if (statsVendedores[email].ganadas > umbral) {
+    if (statsVendedores[email].ganadas > 10) {
       statsVendedores[email].comisiones += (Number(c.precio_total || 0) * 0.5);
     }
   });
@@ -523,6 +483,16 @@ function JefeView({ cotizaciones, onReload }: { cotizaciones: Cotizacion[]; onRe
   const totalComisionesEstimadas = Object.values(statsVendedores).reduce((acc, v) => acc + v.comisiones, 0);
   const leaderboard = Object.values(statsVendedores).sort((a, b) => b.ganadas - a.ganadas).slice(0, 3);
   const topPlanes = Object.entries(planesVendidos).sort((a, b) => b[1] - a[1]).slice(0, 4);
+
+  // Datos para el Gráfico de Pizza Porcentual
+  const totalPlanesCount = ganadas.length;
+  const dataPieChart = Object.entries(planesVendidos).map(([name, count]) => ({
+    name,
+    value: totalPlanesCount > 0 ? Number(((count / totalPlanesCount) * 100).toFixed(1)) : 0,
+    count
+  })).sort((a, b) => b.value - a.value);
+
+  const PIE_COLORS = ['#3B82F6', '#10B981', '#FACC15', '#EC4899', '#8B5CF6', '#06B6D4'];
 
   const equipos = useMemo(() => {
     const supervisores = profiles.filter(p => p.role === 'supervisor');
@@ -544,12 +514,23 @@ function JefeView({ cotizaciones, onReload }: { cotizaciones: Cotizacion[]; onRe
     }).sort((a, b) => b.totalGanadas - a.totalGanadas);
   }, [profiles, ganadas]);
 
+  const statsPlanes: Record<string, { ventas: number; capitas: number }> = {};
+  ganadas.forEach(c => {
+    const planName = `${c.obra_social} - ${c.nombre_plan}`;
+    if (!statsPlanes[planName]) statsPlanes[planName] = { ventas: 0, capitas: 0 };
+    statsPlanes[planName].ventas += 1;
+    statsPlanes[planName].capitas += 1 + getAdherentesCount(c);
+  });
+  const planesPromedio = Object.entries(statsPlanes)
+    .map(([plan, data]) => ({ plan, promedio: (data.capitas / data.ventas).toFixed(2), ventas: data.ventas }))
+    .sort((a, b) => Number(b.promedio) - Number(a.promedio)).slice(0, 3);
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h2 className="text-xl font-bold text-white flex items-center gap-2"><BarChart3 className="w-6 h-6 text-blue-400" /> Visión General Directiva</h2>
-          <p className="text-sm text-slate-400 mt-0.5">Control financiero, conversión y estrategia corporativa.</p>
+          <h2 className="text-xl font-bold text-white flex items-center gap-2"><BarChart3 className="w-6 h-6 text-blue-400" /> Dashboard Privado de Gerencia</h2>
+          <p className="text-sm text-slate-400 mt-0.5">Control de rentabilidad total, cápitas y comisiones de agencia (Confidencial).</p>
         </div>
         <div className="flex items-center gap-3">
           <div className="relative">
@@ -562,37 +543,160 @@ function JefeView({ cotizaciones, onReload }: { cotizaciones: Cotizacion[]; onRe
         </div>
       </div>
 
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* Módulo de Cápitas Ingresadas con Desglose */}
+        <div className="bg-gradient-to-br from-slate-900 to-amber-950/40 border border-slate-800 p-6 rounded-2xl shadow-lg relative overflow-hidden flex flex-col justify-between">
+           <div className="absolute top-0 right-0 p-4 opacity-10"><Users className="w-20 h-20"/></div>
+           <div>
+             <div className="text-sm text-slate-400 flex items-center gap-2 mb-2"><TrendingUp className="w-4 h-4 text-amber-400"/> Cápitas Ingresadas</div>
+             <div className="flex items-baseline gap-2 mt-2">
+               <div className="text-5xl font-bold text-white">{capitasTotales}</div>
+               {limiteSiguiente > 0 && <div className="text-lg text-slate-400 font-medium">/ {limiteSiguiente} objetivo</div>}
+             </div>
+           </div>
+
+           {/* Desglose de Cápitas con colores y porcentajes solicitados */}
+           <div className="my-4 space-y-2">
+             <div className={`flex items-center justify-between px-3 py-2 rounded-xl border ${bgCapitas}`}>
+               <div className="flex items-center gap-2">
+                 <span className={`w-3 h-3 rounded-full ${
+                   capitasTotales <= 25 ? 'bg-yellow-400' :
+                   capitasTotales <= 50 ? 'bg-emerald-400' :
+                   capitasTotales <= 100 ? 'bg-blue-400' : 'bg-purple-400'
+                 }`}></span>
+                 <span className="text-xs font-bold text-white uppercase tracking-wider">{rangoTexto} ({estadoCapitas})</span>
+               </div>
+               <span className={`text-xs font-black ${colorCapitas}`}>{porcentajeCapitas}</span>
+             </div>
+
+             <div className="grid grid-cols-4 gap-1 text-center text-[10px] text-slate-500 pt-1">
+               <span className={capitasTotales <= 25 ? 'text-yellow-400 font-bold' : ''}>0-25 (150%)</span>
+               <span className={capitasTotales >= 26 && capitasTotales <= 50 ? 'text-emerald-400 font-bold' : ''}>25-50 (200%)</span>
+               <span className={capitasTotales >= 51 && capitasTotales <= 100 ? 'text-blue-400 font-bold' : ''}>50-100 (250%)</span>
+               <span className={capitasTotales >= 101 ? 'text-purple-400 font-bold' : ''}>100+ (300%)</span>
+             </div>
+           </div>
+           
+           <div className="pt-3 border-t border-slate-800/80">
+              <div className="flex justify-between text-xs text-slate-400 mb-1.5 font-medium">
+                <span>Rango Actual: {porcentajeCapitas}</span>
+                {limiteSiguiente > 0 ? <span className="text-amber-400">Próximo: {proximoRangoStr}</span> : <span className="text-purple-400 font-bold">MÁXIMO ALCANZADO</span>}
+              </div>
+              <div className="w-full bg-slate-950 h-2 rounded-full overflow-hidden">
+                <div className="bg-amber-400 h-full rounded-full transition-all duration-1000" style={{ width: `${Math.min((capitasTotales / (limiteSiguiente || 101)) * 100, 100)}%` }}></div>
+              </div>
+           </div>
+        </div>
+
+        {/* Panel renombrado: Ventas en bruto */}
+        <div className="bg-gradient-to-br from-slate-900 to-emerald-950/40 border border-emerald-500/30 p-6 rounded-2xl shadow-lg flex flex-col justify-between relative overflow-hidden">
+          <div className="absolute top-0 right-0 p-4 opacity-10"><DollarSign className="w-20 h-20 text-emerald-500"/></div>
+          <div className="relative z-10">
+            <div className="text-sm text-emerald-400/90 font-bold tracking-wider uppercase flex items-center gap-2 mb-2"><TrendingUp className="w-4 h-4"/> Ventas en bruto</div>
+            <div className="text-4xl lg:text-5xl font-bold text-emerald-400 mt-2">${gananciaGlobalJefe.toLocaleString('es-AR')}</div>
+          </div>
+          <div className="text-xs text-slate-400 mt-6 pt-4 border-t border-slate-800/80 flex flex-col gap-1.5 relative z-10">
+             <div className="flex justify-between"><span>Base (Bruto x {multiplicador * 100}%):</span><span className="text-white font-medium">${ (volumenBruto * multiplicador).toLocaleString('es-AR') }</span></div>
+             <div className="flex justify-between"><span>Bonos por Metas:</span><span className="text-emerald-400 font-medium">+ ${bonosSalto.toLocaleString('es-AR')}</span></div>
+          </div>
+        </div>
+
+        {/* Panel renombrado: Volumen real de lo vendido */}
+        <div className="bg-gradient-to-br from-slate-900 to-sky-950/40 border border-slate-800 p-6 rounded-2xl shadow-lg flex flex-col justify-between">
+          <div>
+            <div className="text-sm text-slate-400 flex items-center gap-2 mb-2"><DollarSign className="w-4 h-4 text-sky-400"/> Volumen real de lo vendido</div>
+            <div className="text-4xl font-bold text-white mt-4">${volumenBruto.toLocaleString('es-AR')}</div>
+          </div>
+          <div className="text-xs text-slate-500 mt-6 pt-4 border-t border-slate-800/80">
+             En {ganadas.length} fichas cerradas por el equipo.
+          </div>
+        </div>
+      </div>
+
+      <div className="bg-slate-900/50 border border-slate-800 rounded-2xl p-5 shadow-lg">
+        <h3 className="text-sm font-semibold text-white mb-4 flex items-center gap-2"><PieChartIcon className="w-4 h-4 text-purple-400"/> Perfil de Venta: Cápitas Promedio por Plan</h3>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {planesPromedio.map(p => (
+            <div key={p.plan} className="bg-slate-950/50 p-4 rounded-xl border border-slate-800/80">
+              <div className="text-xs text-purple-400 font-bold mb-1 line-clamp-1">{p.plan}</div>
+              <div className="flex justify-between items-end mt-2">
+                 <div className="text-2xl font-bold text-white">{p.promedio} <span className="text-xs text-slate-500 font-normal">cápitas/ficha</span></div>
+                 <div className="text-xs text-slate-400 bg-slate-900 px-2 py-1 rounded-lg border border-slate-800">{p.ventas} ventas</div>
+              </div>
+            </div>
+          ))}
+          {planesPromedio.length === 0 && <div className="text-slate-500 text-sm py-4">No hay ventas registradas en este período.</div>}
+        </div>
+      </div>
+
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <div className="bg-gradient-to-br from-slate-900 to-sky-950/40 border border-slate-800 p-5 rounded-2xl shadow-lg"><div className="text-sm text-slate-400 flex items-center gap-2 mb-2"><DollarSign className="w-4 h-4 text-sky-400"/> Volumen de Ventas</div><div className="text-3xl font-bold text-white">${volumenTotal.toLocaleString('es-AR')}</div></div>
-        <div className="bg-gradient-to-br from-slate-900 to-emerald-950/40 border border-slate-800 p-5 rounded-2xl shadow-lg"><div className="text-sm text-slate-400 flex items-center gap-2 mb-2"><TrendingUp className="w-4 h-4 text-emerald-400"/> Comisiones (Est.)</div><div className="text-3xl font-bold text-emerald-400">${totalComisionesEstimadas.toLocaleString('es-AR')}</div></div>
-        <div className="bg-gradient-to-br from-slate-900 to-amber-950/40 border border-slate-800 p-5 rounded-2xl shadow-lg"><div className="text-sm text-slate-400 flex items-center gap-2 mb-2"><Target className="w-4 h-4 text-amber-400"/> Win Rate</div><div className="text-3xl font-bold text-white">{winRate}% <span className="text-sm font-normal text-slate-500 ml-1">efectividad</span></div></div>
+        <div className="bg-slate-900/80 border border-slate-800 p-4 rounded-xl shadow-md"><div className="text-xs text-slate-400 flex items-center gap-2 mb-1"><DollarSign className="w-3.5 h-3.5 text-sky-400"/> Volumen de Ventas</div><div className="text-2xl font-bold text-white">${volumenBruto.toLocaleString('es-AR')}</div></div>
+        <div className="bg-slate-900/80 border border-slate-800 p-4 rounded-xl shadow-md"><div className="text-xs text-slate-400 flex items-center gap-2 mb-1"><TrendingUp className="w-3.5 h-3.5 text-emerald-400"/> Comisiones Vendedores (Est.)</div><div className="text-2xl font-bold text-emerald-400">${totalComisionesEstimadas.toLocaleString('es-AR')}</div></div>
+        <div className="bg-slate-900/80 border border-slate-800 p-4 rounded-xl shadow-md"><div className="text-xs text-slate-400 flex items-center gap-2 mb-1"><Target className="w-3.5 h-3.5 text-amber-400"/> Win Rate</div><div className="text-2xl font-bold text-white">{winRate}% <span className="text-xs font-normal text-slate-500 ml-1">efectividad</span></div></div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <div className="bg-slate-900/50 border border-slate-800 rounded-2xl p-5 shadow-lg">
+        <div className="bg-slate-900/50 border border-slate-800 rounded-2xl p-5 shadow-lg flex flex-col">
           <h3 className="text-sm font-semibold text-white mb-4 flex items-center gap-2"><Trophy className="w-4 h-4 text-amber-400"/> Top Vendedores del Período</h3>
-          <div className="space-y-3">
+          <div className="space-y-3 flex-1">
             {leaderboard.map((v, i) => (
               <div key={v.nombre} className="flex items-center justify-between bg-slate-950/50 p-3 rounded-xl border border-slate-800/80">
                 <div className="flex items-center gap-3">
                   <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-slate-900 ${i === 0 ? 'bg-amber-400' : i === 1 ? 'bg-slate-300' : 'bg-amber-700'}`}>{i + 1}</div>
-                  <div><div className="text-sm font-medium text-white">{v.nombre}</div><div className="text-xs text-emerald-400 font-semibold">Comisión: ${v.comisiones.toLocaleString('es-AR')}</div></div>
+                  <div><div className="text-sm font-medium text-white">{v.nombre}</div><div className="text-xs text-emerald-400 font-semibold">Comisión base: ${v.comisiones.toLocaleString('es-AR')}</div></div>
                 </div>
                 <div className="text-xl font-bold text-white">{v.ganadas} <span className="text-xs font-normal text-slate-500">ventas</span></div>
               </div>
             ))}
+            {leaderboard.length === 0 && <div className="text-slate-500 text-sm">Sin datos.</div>}
           </div>
         </div>
-        <div className="bg-slate-900/50 border border-slate-800 rounded-2xl p-5 shadow-lg">
-          <h3 className="text-sm font-semibold text-white mb-4 flex items-center gap-2"><PieChart className="w-4 h-4 text-purple-400"/> Planes más vendidos</h3>
-          <div className="space-y-4">
-            {topPlanes.map(([plan, count]) => (
-              <div key={plan}>
-                <div className="flex justify-between text-xs mb-1"><span className="text-slate-300 font-medium truncate pr-4">{plan}</span><span className="text-white font-bold flex-shrink-0">{count} cierres</span></div>
-                <div className="w-full bg-slate-800 h-2 rounded-full overflow-hidden"><div className="bg-purple-500 h-full rounded-full" style={{ width: `${(count / topPlanes[0][1]) * 100}%` }}></div></div>
+
+        {/* Gráfico de Pizza Porcentual de Planes Vendidos */}
+        <div className="bg-slate-900/50 border border-slate-800 rounded-2xl p-5 shadow-lg flex flex-col">
+          <h3 className="text-sm font-semibold text-white mb-4 flex items-center gap-2"><PieChartIcon className="w-4 h-4 text-purple-400"/> Escala total porcentual de lo vendido</h3>
+          {dataPieChart.length > 0 ? (
+            <div className="flex flex-col sm:flex-row items-center gap-4 flex-1">
+              <div className="w-full sm:w-1/2 h-56">
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                    <Pie data={dataPieChart} cx="50%" cy="50%" innerRadius={45} outerRadius={75} paddingAngle={4} dataKey="value">
+                      {dataPieChart.map((entry, index) => (
+                        <Cell key={`cell-${index}`} fill={PIE_COLORS[index % PIE_COLORS.length]} />
+                      ))}
+                    </Pie>
+                    <Tooltip formatter={(val: any) => [`${val}%`, 'Participación']} contentStyle={{ backgroundColor: '#0f1523', borderColor: '#334155', borderRadius: '8px', color: '#fff' }} />
+                  </PieChart>
+                </ResponsiveContainer>
               </div>
-            ))}
-          </div>
+              <div className="w-full sm:w-1/2 space-y-2 pr-2">
+                {dataPieChart.map((item, idx) => (
+                  <div key={item.name} className="flex items-center justify-between text-xs bg-slate-950/50 p-2 rounded-lg border border-slate-800/80">
+                    <div className="flex items-center gap-2 truncate pr-2">
+                      <span className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: PIE_COLORS[idx % PIE_COLORS.length] }}></span>
+                      <span className="text-slate-300 truncate font-medium">{item.name}</span>
+                    </div>
+                    <span className="text-white font-bold flex-shrink-0">{item.value}% <span className="text-slate-500 font-normal">({item.count})</span></span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : (
+            <div className="text-slate-500 text-sm py-16 text-center">Sin datos para mostrar en el gráfico.</div>
+          )}
+        </div>
+      </div>
+
+      <div className="bg-slate-900/50 border border-slate-800 rounded-2xl p-5 shadow-lg">
+        <h3 className="text-sm font-semibold text-white mb-4 flex items-center gap-2"><PieChartIcon className="w-4 h-4 text-purple-400"/> Planes más vendidos (Ranking Tradicional)</h3>
+        <div className="space-y-4">
+          {topPlanes.map(([plan, count]) => (
+            <div key={plan}>
+              <div className="flex justify-between text-xs mb-1"><span className="text-slate-300 font-medium truncate pr-4">{plan}</span><span className="text-white font-bold flex-shrink-0">{count} cierres</span></div>
+              <div className="w-full bg-slate-800 h-2 rounded-full overflow-hidden"><div className="bg-purple-500 h-full rounded-full" style={{ width: `${(count / (topPlanes[0]?.[1] || 1)) * 100}%` }}></div></div>
+            </div>
+          ))}
+          {topPlanes.length === 0 && <div className="text-slate-500 text-sm">Sin datos.</div>}
         </div>
       </div>
 
@@ -631,7 +735,7 @@ function JefeView({ cotizaciones, onReload }: { cotizaciones: Cotizacion[]; onRe
 }
 
 // ==========================================
-// 🕵️‍♂️ PANEL DE SUPERVISOR (Control Operativo)
+// 🕵️‍♂️ PANEL DE SUPERVISORA
 // ==========================================
 function SupervisorView({ cotizaciones, onReload, profile }: { cotizaciones: Cotizacion[]; onReload: () => void; profile: Profile }) {
   const [selectedMonth, setSelectedMonth] = useState<string>('Todos');
@@ -663,16 +767,25 @@ function SupervisorView({ cotizaciones, onReload, profile }: { cotizaciones: Cot
     });
   }, [cotizacionesEquipo, selectedMonth]);
 
-  const congeladas = dataFiltrada.filter(c => {
-    if (c.etapa !== 'Cotización enviada') return false;
-    const diffDays = Math.floor((new Date().getTime() - new Date(c.creado_en).getTime()) / (1000 * 3600 * 24));
-    return diffDays >= 4;
+  const ganadasEquipo = dataFiltrada.filter(c => c.etapa === 'Cerrado ganado');
+  const fichasEquipoTotales = ganadasEquipo.length;
+  const volumenBrutoEquipo = ganadasEquipo.reduce((acc, c) => acc + Number(c.precio_total || 0), 0);
+
+  const misGanadasPersonales = ganadasEquipo.filter(c => c.email_vendedor?.toLowerCase() === profile.email.toLowerCase());
+  let comisionPersonal = 0;
+  misGanadasPersonales.forEach((c, index) => {
+    if (index >= 10) { comisionPersonal += Number(c.precio_total || 0) * 0.5; }
   });
+
+  const metaAlcanzada = fichasEquipoTotales >= 45;
+  const bonoEquipo = metaAlcanzada ? (volumenBrutoEquipo * 0.10) : 0;
+  const gananciaTotalSup = comisionPersonal + bonoEquipo;
+  const porcentajeRueda = Math.min((fichasEquipoTotales / 45) * 100, 100);
 
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div><h2 className="text-xl font-bold text-white flex items-center gap-2"><Users className="w-6 h-6 text-blue-400" /> Control de Mi Equipo</h2><p className="text-sm text-slate-400 mt-0.5">Rendimiento, alertas y empuje operativo de vendedores a cargo.</p></div>
+        <div><h2 className="text-xl font-bold text-white flex items-center gap-2"><Users className="w-6 h-6 text-blue-400" /> Panel de Supervisión</h2><p className="text-sm text-slate-400 mt-0.5">Control operativo y métricas de comisiones globales.</p></div>
         <div className="relative">
           <CalendarIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
           <select value={selectedMonth} onChange={(e) => setSelectedMonth(e.target.value)} className="pl-9 pr-4 py-2 bg-slate-900 border border-slate-700 text-sm text-white rounded-xl focus:outline-none focus:border-blue-500">
@@ -681,83 +794,95 @@ function SupervisorView({ cotizaciones, onReload, profile }: { cotizaciones: Cot
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="lg:col-span-2 bg-slate-900/50 border border-slate-800 rounded-2xl p-5 shadow-lg">
-          <h3 className="text-sm font-semibold text-white mb-4 flex items-center gap-2"><Target className="w-4 h-4 text-blue-400"/> Progreso hacia la Meta por Vendedor</h3>
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="text-slate-400 border-b border-slate-800/80"><th className="text-left py-2 font-medium">Vendedor</th><th className="text-center py-2 font-medium">Meta</th><th className="text-center py-2 font-medium">Cierres</th><th className="text-center py-2 font-medium">Estado</th></tr>
-              </thead>
-              <tbody>
-                {equipoProfiles.map(v => {
-                  const ganadas = dataFiltrada.filter(c => c.email_vendedor?.toLowerCase() === v.email.toLowerCase() && c.etapa === 'Cerrado ganado').length;
-                  const meta = v.role === 'vendedor_senior' ? 20 : 15;
-                  const porcentaje = (ganadas / meta) * 100;
-                  const color = porcentaje >= 100 ? 'text-emerald-400 bg-emerald-400/10 border-emerald-400/20' : porcentaje >= 50 ? 'text-amber-400 bg-amber-400/10 border-amber-400/20' : 'text-red-400 bg-red-400/10 border-red-400/20';
-                  
-                  return (
-                    <tr key={v.id} className="border-b border-slate-800/50 last:border-0">
-                      <td className="py-3 text-white font-medium">{v.full_name || v.email}</td><td className="py-3 text-center text-slate-400">{meta}</td><td className="py-3 text-center font-bold text-white">{ganadas}</td>
-                      <td className="py-3 text-center"><span className={`px-2.5 py-1 rounded-full text-xs font-semibold border ${color}`}>{porcentaje >= 100 ? 'Logrado' : porcentaje >= 50 ? 'En camino' : 'Atrasado'}</span></td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        <div className="bg-slate-900/50 border border-slate-800 rounded-2xl p-6 shadow-lg flex items-center justify-center gap-6">
+           <div className="relative w-28 h-28 flex-shrink-0">
+             <svg viewBox="0 0 36 36" className="w-full h-full transform -rotate-90">
+               <path className="stroke-slate-800" strokeWidth="3" fill="none" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
+               <path className={`stroke-blue-500 transition-all duration-1000 ${metaAlcanzada ? 'stroke-emerald-400' : ''}`} strokeWidth="3" strokeDasharray={`${porcentajeRueda}, 100`} fill="none" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
+             </svg>
+             <div className="absolute inset-0 flex flex-col items-center justify-center">
+                <span className={`text-2xl font-bold ${metaAlcanzada ? 'text-emerald-400' : 'text-white'}`}>{fichasEquipoTotales}</span>
+                <span className="text-[10px] text-slate-400 uppercase tracking-wider font-semibold -mt-1">de 45</span>
+             </div>
+           </div>
+           <div>
+             <h3 className="text-sm font-semibold text-slate-300 mb-1">Meta del Equipo</h3>
+           </div>
         </div>
 
-        <div className="bg-gradient-to-br from-slate-900 to-red-950/20 border border-slate-800 rounded-2xl p-5 shadow-lg flex flex-col">
-          <h3 className="text-sm font-semibold text-white mb-1 flex items-center gap-2"><AlertTriangle className="w-4 h-4 text-red-400"/> Fichas Congeladas</h3>
-          <p className="text-xs text-slate-400 mb-4">Enviadas hace más de 4 días sin respuesta.</p>
-          <div className="flex-1 overflow-y-auto space-y-3 max-h-[250px] pr-1">
-            {congeladas.map(c => {
-               const days = Math.floor((new Date().getTime() - new Date(c.creado_en).getTime()) / (1000 * 3600 * 24));
-               return (
-                <div key={c.id} className="bg-slate-950/60 p-3 rounded-xl border border-red-900/30">
-                  <div className="flex justify-between items-start mb-1"><span className="text-sm font-medium text-white truncate pr-2">{c.cliente_nombre}</span><span className="text-xs font-bold text-red-400 whitespace-nowrap">{days} días</span></div>
-                  <div className="text-xs text-slate-400 truncate">Vend: {c.email_vendedor}</div>
-                </div>
-               )
-            })}
-            {congeladas.length === 0 && <div className="text-sm text-emerald-500/80 text-center py-6 flex flex-col items-center gap-2"><CheckCircle2 className="w-6 h-6"/> Todo al día.</div>}
-          </div>
+        <div className="bg-gradient-to-br from-slate-900 to-sky-950/40 border border-slate-800 p-6 rounded-2xl shadow-lg flex flex-col justify-center">
+          <div className="text-sm text-slate-400 flex items-center gap-2 mb-2"><DollarSign className="w-4 h-4 text-sky-400"/> Facturado Total del Equipo</div>
+          <div className="text-4xl font-bold text-white">${volumenBrutoEquipo.toLocaleString('es-AR')}</div>
+        </div>
+
+        <div className="bg-gradient-to-br from-slate-900 to-emerald-950/40 border border-emerald-500/30 p-6 rounded-2xl shadow-lg flex flex-col justify-center">
+          <div className="text-sm text-emerald-400/80 font-bold tracking-wider uppercase flex items-center gap-2 mb-2"><TrendingUp className="w-4 h-4"/> Ganancia del Mes</div>
+          <div className="text-5xl font-bold text-emerald-400">${gananciaTotalSup.toLocaleString('es-AR')}</div>
         </div>
       </div>
+
+      <div className="bg-slate-900/50 border border-slate-800 rounded-2xl p-5 shadow-lg">
+        <h3 className="text-sm font-semibold text-white mb-4 flex items-center gap-2"><Target className="w-4 h-4 text-blue-400"/> Progreso Individual de Vendedores</h3>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-slate-400 border-b border-slate-800/80"><th className="text-left py-2 font-medium">Vendedor</th><th className="text-center py-2 font-medium">Meta Ind.</th><th className="text-center py-2 font-medium">Cierres</th><th className="text-center py-2 font-medium">Estado</th></tr>
+            </thead>
+            <tbody>
+              {equipoProfiles.map(v => {
+                const ganadas = dataFiltrada.filter(c => c.email_vendedor?.toLowerCase() === v.email.toLowerCase() && c.etapa === 'Cerrado ganado').length;
+                const meta = v.role === 'vendedor_senior' ? 20 : 15;
+                const porcentaje = (ganadas / meta) * 100;
+                const color = porcentaje >= 100 ? 'text-emerald-400 bg-emerald-400/10 border-emerald-400/20' : porcentaje >= 50 ? 'text-amber-400 bg-amber-400/10 border-amber-400/20' : 'text-red-400 bg-red-400/10 border-red-400/20';
+                
+                return (
+                  <tr key={v.id} className="border-b border-slate-800/50 last:border-0">
+                    <td className="py-3 text-white font-medium">{v.full_name || v.email}</td><td className="py-3 text-center text-slate-400">{meta}</td><td className="py-3 text-center font-bold text-white">{ganadas}</td>
+                    <td className="py-3 text-center"><span className={`px-2.5 py-1 rounded-full text-xs font-semibold border ${color}`}>{porcentaje >= 100 ? 'Logrado' : porcentaje >= 50 ? 'En camino' : 'Atrasado'}</span></td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+      
       <CotizacionesView cotizaciones={dataFiltrada} onReload={onReload} hideMetrics={true} />
     </div>
   );
 }
 
 // ==========================================
-// 🚀 PANEL DE VENDEDOR (Mi Progreso)
+// 🚀 PANEL DE VENDEDOR
 // ==========================================
 function VendedorPerformanceView({ cotizaciones, profileEmail, role }: { cotizaciones: Cotizacion[]; profileEmail: string; role: string }) {
   const misCotizaciones = cotizaciones.filter(c => c.email_vendedor?.toLowerCase() === profileEmail.toLowerCase());
   const misGanadas = misCotizaciones.filter(c => c.etapa === 'Cerrado ganado');
   const totalVentas = misGanadas.length;
 
-  let objetivoMeta = 15;
-  let umbralComision = 10;
-  if (role === 'supervisor') objetivoMeta = 10;
-  else if (role === 'vendedor_senior') objetivoMeta = 20;
-
+  let objetivoMeta = role === 'vendedor_senior' ? 20 : 15;
   const porcentajeMeta = Math.min(Math.round((totalVentas / objetivoMeta) * 100), 100);
-  let totalComisionableEstimada = 0;
+  
+  let totalComisionesBases = 0;
   misGanadas.forEach((venta, index) => {
-    if (index >= umbralComision) totalComisionableEstimada += Number(venta.precio_total || 0) * 0.5;
+    if (index >= 10) totalComisionesBases += Number(venta.precio_total || 0) * 0.5;
   });
+
+  const bonoAlcanzado = totalVentas >= 5;
+  const progresoBonoActual = Math.min(totalVentas, 5);
+  const dineroPorBonos = bonoAlcanzado ? 200000 : 0;
+  const totalComisionableEstimada = totalComisionesBases + dineroPorBonos;
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between"><div><h2 className="text-xl font-bold text-white flex items-center gap-2"><Award className="w-6 h-6 text-blue-400" /> Mi Progreso</h2></div></div>
+      <div className="flex items-center justify-between"><div><h2 className="text-xl font-bold text-white flex items-center gap-2"><Award className="w-6 h-6 text-blue-400" /> Mi Progreso y Bonos</h2></div></div>
 
       <div className="bg-gradient-to-r from-slate-900 via-slate-900 to-blue-950/40 border border-slate-800 rounded-2xl p-6 shadow-xl relative overflow-hidden">
         <div className="absolute right-4 top-4 text-blue-500/10 pointer-events-none"><Target className="w-32 h-32" /></div>
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 relative z-10">
           <div className="space-y-2">
-            <div className="flex items-center gap-2 text-blue-400 text-sm font-semibold tracking-wider uppercase"><Target className="w-4 h-4" /> Meta Comercial ({objetivoMeta} Ventas)</div>
+            <div className="flex items-center gap-2 text-blue-400 text-sm font-semibold tracking-wider uppercase"><Target className="w-4 h-4" /> Meta Mensual ({objetivoMeta} Ventas)</div>
             <div className="text-3xl font-bold text-white">{totalVentas} <span className="text-lg text-slate-400 font-normal">/ {objetivoMeta} concretadas</span></div>
           </div>
           <div className="bg-slate-950/60 border border-slate-800/80 rounded-xl p-4 min-w-[240px]">
@@ -767,13 +892,46 @@ function VendedorPerformanceView({ cotizaciones, profileEmail, role }: { cotizac
         </div>
       </div>
 
-      <div className="bg-gradient-to-r from-slate-900 via-slate-900 to-emerald-950/30 border border-slate-800 rounded-2xl p-6 shadow-xl flex flex-col sm:flex-row items-center justify-between gap-4">
-        <div className="flex items-center gap-3">
-          <div className="p-3 bg-emerald-500/10 rounded-xl text-emerald-400 border border-emerald-500/20"><DollarSign className="w-6 h-6" /></div>
-          <div><div className="text-xs text-slate-400 uppercase font-semibold tracking-wider">Mis Comisiones</div><div className="text-sm text-slate-300">Total acumulado por ventas y sobreproducción</div></div>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div className="bg-gradient-to-r from-slate-900 via-slate-900 to-emerald-950/30 border border-emerald-500/20 rounded-2xl p-6 shadow-xl flex flex-col justify-between">
+          <div>
+            <div className="text-xs text-emerald-400 font-bold uppercase tracking-wider mb-2 flex items-center gap-2"><DollarSign className="w-4 h-4"/> Mis Comisiones Acumuladas</div>
+            <div className="text-5xl font-bold text-emerald-400">${totalComisionableEstimada.toLocaleString('es-AR')}</div>
+          </div>
+          <div className="text-xs text-slate-400 mt-6 pt-4 border-t border-slate-800 flex justify-between items-center">
+            <span className="flex items-center gap-1.5 font-medium"><CheckCircle2 className={`w-3.5 h-3.5 ${totalVentas > 10 ? 'text-emerald-400' : 'text-slate-500'}`}/> Ficha 11+: ${totalComisionesBases.toLocaleString('es-AR')}</span>
+            <span className={`flex items-center gap-1.5 font-medium ${bonoAlcanzado ? 'text-emerald-400' : 'text-slate-500'}`}><Gift className="w-3.5 h-3.5"/> Bono 5 Ventas: ${dineroPorBonos.toLocaleString('es-AR')}</span>
+          </div>
         </div>
-        <div className="text-3xl font-bold text-emerald-400 bg-slate-950/80 border border-emerald-500/30 px-6 py-3 rounded-xl shadow-inner min-w-[180px] text-center">
-          ${totalComisionableEstimada.toLocaleString('es-AR')}
+
+        <div className="bg-gradient-to-br from-indigo-950/40 via-slate-900 to-slate-900 border border-indigo-500/30 rounded-2xl p-6 shadow-xl flex flex-col justify-between">
+           <div className="flex flex-col sm:flex-row justify-between sm:items-start mb-6 gap-4">
+              <div>
+                <div className="text-xs text-indigo-400 font-bold uppercase tracking-wider mb-1 flex items-center gap-1.5"><Gift className="w-4 h-4"/> Bono Especial de Producción</div>
+                <div className="text-2xl font-bold text-white mb-1">Premio de $200.000</div>
+                <div className="text-sm text-slate-400 leading-tight">Alcanzá las primeras 5 ventas del mes para destrabar el bono único.</div>
+              </div>
+              {bonoAlcanzado && (
+                 <div className="bg-indigo-500 text-white font-bold px-4 py-2 rounded-xl text-xs sm:text-sm shadow-[0_0_15px_rgba(99,102,241,0.5)] border border-indigo-400">
+                   ¡BONO ALCANZADO!
+                 </div>
+              )}
+           </div>
+
+           <div className="flex items-center justify-between gap-2 w-full mt-auto">
+             {[1, 2, 3, 4, 5].map((paso) => {
+               const isFilled = paso <= progresoBonoActual;
+               const isLastAndFilled = paso === 5 && bonoAlcanzado;
+               return (
+                  <div key={paso} className="flex-1 flex flex-col items-center relative">
+                     <div className={`w-full h-2 rounded-full mb-3 ${isFilled ? 'bg-indigo-500 shadow-[0_0_10px_rgba(99,102,241,0.6)]' : 'bg-slate-800'}`}></div>
+                     <div className={`w-8 h-8 sm:w-10 sm:h-10 rounded-full flex items-center justify-center font-bold text-sm sm:text-base border-2 z-10 transition-all duration-300 ${isLastAndFilled ? 'bg-indigo-500 border-indigo-400 text-white scale-110 shadow-[0_0_15px_rgba(99,102,241,0.6)]' : isFilled ? 'bg-indigo-900 border-indigo-500 text-indigo-300' : 'bg-slate-900 border-slate-700 text-slate-500'}`}>
+                       {isLastAndFilled ? <Check className="w-5 h-5"/> : paso}
+                     </div>
+                  </div>
+               );
+             })}
+           </div>
         </div>
       </div>
     </div>
@@ -781,13 +939,11 @@ function VendedorPerformanceView({ cotizaciones, profileEmail, role }: { cotizac
 }
 
 // ==========================================
-// 🛡️ MODAL DE GESTIÓN DE ROLES (Solución de Seguridad)
+// 🛡️ MODAL DE GESTIÓN DE ROLES
 // ==========================================
 function RolesManagerModal({ onClose, onSaved }: { onClose: () => void; onSaved: () => void }) {
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [loading, setLoading] = useState(true);
-
-  // ESTADOS PARA CREACIÓN DE NUEVO USUARIO
   const [isCreating, setIsCreating] = useState(false);
   const [newEmail, setNewEmail] = useState('');
   const [newPassword, setNewPassword] = useState('');
@@ -803,26 +959,12 @@ function RolesManagerModal({ onClose, onSaved }: { onClose: () => void; onSaved:
 
   const updateRole = async (id: string, role: string) => {
     const { error, data } = await supabase.from('profiles').update({ role }).eq('id', id).select();
-    
-    if (error) {
-      alert(`Error al guardar: ${error.message}`);
-    } else if (data?.length === 0) {
-      alert("Alerta de Seguridad: Supabase bloqueó el cambio.\n\nVe a Supabase > Authentication > Policies y asegúrate de que el 'Jefe' tenga permisos de UPDATE en la tabla Profiles, o deshabilita temporalmente el RLS de esa tabla para poder editar usuarios.");
-    } else {
-      setProfiles(profiles.map(p => p.id === id ? { ...p, role } : p));
-    }
+    if (error) { alert(`Error al guardar: ${error.message}`); } else if (data?.length === 0) { alert("Alerta de Seguridad: Supabase bloqueó el cambio."); } else { setProfiles(profiles.map(p => p.id === id ? { ...p, role } : p)); }
   };
 
   const updateSupervisor = async (id: string, supId: string) => {
     const { error, data } = await supabase.from('profiles').update({ supervisor_id: supId || null }).eq('id', id).select();
-    
-    if (error) {
-      alert(`Error al guardar: ${error.message}`);
-    } else if (data?.length === 0) {
-      alert("Alerta de Seguridad: Supabase bloqueó el cambio por las reglas RLS de tu tabla.");
-    } else {
-      setProfiles(profiles.map(p => p.id === id ? { ...p, supervisor_id: supId || null } : p));
-    }
+    if (error) { alert(`Error al guardar: ${error.message}`); } else if (data?.length === 0) { alert("Alerta de Seguridad: Supabase bloqueó el cambio."); } else { setProfiles(profiles.map(p => p.id === id ? { ...p, supervisor_id: supId || null } : p)); }
   };
 
   const handleCreateUser = async (e: React.FormEvent) => {
@@ -831,34 +973,14 @@ function RolesManagerModal({ onClose, onSaved }: { onClose: () => void; onSaved:
     if (newPassword.length < 6) return alert("La contraseña debe tener al menos 6 caracteres");
     
     setLoading(true);
-    const { data, error } = await supabase.auth.signUp({
-      email: newEmail,
-      password: newPassword,
-      options: {
-        data: {
-          full_name: newFullName,
-          role: newRole,
-        }
-      }
-    });
-
-    if (error) {
-      alert(`Error al crear usuario: ${error.message}`);
-      setLoading(false);
-      return;
-    }
-
-    alert("¡Usuario creado con éxito! \n\nNOTA TÉCNICA: Si el sistema te cerró la sesión y entró a la cuenta nueva (pantalla en blanco o cambio de perfil), es el comportamiento estándar de seguridad. Solo cierra sesión y vuelve a entrar con tu cuenta de Jefe.");
+    const { data, error } = await supabase.auth.signUp({ email: newEmail, password: newPassword, options: { data: { full_name: newFullName, role: newRole } } });
+    if (error) { alert(`Error al crear usuario: ${error.message}`); setLoading(false); return; }
     
+    alert("¡Usuario creado con éxito!");
     const { data: perfiles } = await supabase.from('profiles').select('*').order('created_at', { ascending: false });
     if (perfiles) setProfiles(perfiles);
     
-    setIsCreating(false);
-    setNewEmail('');
-    setNewPassword('');
-    setNewFullName('');
-    setNewRole('vendedor');
-    setLoading(false);
+    setIsCreating(false); setNewEmail(''); setNewPassword(''); setNewFullName(''); setNewRole('vendedor'); setLoading(false);
   };
 
   const supervisores = profiles.filter(p => p.role === 'supervisor');
@@ -872,7 +994,6 @@ function RolesManagerModal({ onClose, onSaved }: { onClose: () => void; onSaved:
         </div>
         
         <div className="p-6 overflow-y-auto flex-1">
-          
           <div className="bg-slate-900/50 border border-slate-800 p-4 rounded-xl mb-6 transition-all">
             {isCreating ? (
               <form onSubmit={handleCreateUser} className="space-y-4">
@@ -880,44 +1001,16 @@ function RolesManagerModal({ onClose, onSaved }: { onClose: () => void; onSaved:
                   <h3 className="text-sm font-semibold text-white flex items-center gap-2"><UserPlus className="w-4 h-4 text-blue-400" /> Alta de Nuevo Empleado</h3>
                   <button type="button" onClick={() => setIsCreating(false)} className="text-slate-400 hover:text-white"><X className="w-4 h-4"/></button>
                 </div>
-                
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-xs text-slate-400 mb-1">Nombre Completo</label>
-                    <input type="text" value={newFullName} onChange={e => setNewFullName(e.target.value)} className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:border-blue-500 outline-none" required />
-                  </div>
-                  <div>
-                    <label className="block text-xs text-slate-400 mb-1">Rol Inicial</label>
-                    <select value={newRole} onChange={e => setNewRole(e.target.value)} className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:border-blue-500 outline-none">
-                      <option value="vendedor">Vendedor Inicial</option>
-                      <option value="vendedor_senior">Vendedor Senior</option>
-                      <option value="supervisor">Supervisor</option>
-                      <option value="jefe">Jefe de Ventas</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-xs text-slate-400 mb-1">Correo Electrónico (Login)</label>
-                    <div className="relative">
-                      <Mail className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
-                      <input type="email" value={newEmail} onChange={e => setNewEmail(e.target.value)} className="w-full bg-slate-950 border border-slate-700 rounded-lg pl-9 pr-3 py-2 text-sm text-white focus:border-blue-500 outline-none" required />
-                    </div>
-                  </div>
-                  <div>
-                    <label className="block text-xs text-slate-400 mb-1">Contraseña Provisoria</label>
-                    <div className="relative">
-                      <Lock className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
-                      <input type="text" value={newPassword} onChange={e => setNewPassword(e.target.value)} className="w-full bg-slate-950 border border-slate-700 rounded-lg pl-9 pr-3 py-2 text-sm text-white focus:border-blue-500 outline-none" minLength={6} required />
-                    </div>
-                  </div>
+                  <div><label className="block text-xs text-slate-400 mb-1">Nombre Completo</label><input type="text" value={newFullName} onChange={e => setNewFullName(e.target.value)} className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:border-blue-500 outline-none" required /></div>
+                  <div><label className="block text-xs text-slate-400 mb-1">Rol Inicial</label><select value={newRole} onChange={e => setNewRole(e.target.value)} className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:border-blue-500 outline-none"><option value="vendedor">Vendedor Inicial</option><option value="vendedor_senior">Vendedor Senior</option><option value="supervisor">Supervisor</option><option value="jefe">Jefe de Ventas</option></select></div>
+                  <div><label className="block text-xs text-slate-400 mb-1">Correo Electrónico (Login)</label><div className="relative"><Mail className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" /><input type="email" value={newEmail} onChange={e => setNewEmail(e.target.value)} className="w-full bg-slate-950 border border-slate-700 rounded-lg pl-9 pr-3 py-2 text-sm text-white focus:border-blue-500 outline-none" required /></div></div>
+                  <div><label className="block text-xs text-slate-400 mb-1">Contraseña Provisoria</label><div className="relative"><Lock className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" /><input type="text" value={newPassword} onChange={e => setNewPassword(e.target.value)} className="w-full bg-slate-950 border border-slate-700 rounded-lg pl-9 pr-3 py-2 text-sm text-white focus:border-blue-500 outline-none" minLength={6} required /></div></div>
                 </div>
-                <button type="submit" disabled={loading} className="w-full bg-blue-600 hover:bg-blue-500 text-white font-medium py-2 rounded-lg flex justify-center items-center gap-2 mt-2">
-                  {loading ? <Loader2 className="w-4 h-4 animate-spin"/> : 'Crear Usuario'}
-                </button>
+                <button type="submit" disabled={loading} className="w-full bg-blue-600 hover:bg-blue-500 text-white font-medium py-2 rounded-lg flex justify-center items-center gap-2 mt-2">{loading ? <Loader2 className="w-4 h-4 animate-spin"/> : 'Crear Usuario'}</button>
               </form>
             ) : (
-              <button onClick={() => setIsCreating(true)} className="w-full py-3 border-2 border-dashed border-slate-700 hover:border-blue-500/50 hover:bg-blue-500/5 rounded-xl flex items-center justify-center gap-2 text-sm font-medium text-blue-400 transition-all">
-                <UserPlus className="w-4 h-4" /> Registrar un nuevo empleado
-              </button>
+              <button onClick={() => setIsCreating(true)} className="w-full py-3 border-2 border-dashed border-slate-700 hover:border-blue-500/50 hover:bg-blue-500/5 rounded-xl flex items-center justify-center gap-2 text-sm font-medium text-blue-400 transition-all"><UserPlus className="w-4 h-4" /> Registrar un nuevo empleado</button>
             )}
           </div>
 
@@ -927,23 +1020,14 @@ function RolesManagerModal({ onClose, onSaved }: { onClose: () => void; onSaved:
             <div className="space-y-4">
               {profiles.map(p => (
                 <div key={p.id} className="bg-slate-950/50 border border-slate-800 p-4 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                  <div>
-                    <div className="text-white font-bold">{p.full_name || 'Sin nombre'}</div>
-                    <div className="text-xs text-slate-400">{p.email}</div>
-                  </div>
-                  
+                  <div><div className="text-white font-bold">{p.full_name || 'Sin nombre'}</div><div className="text-xs text-slate-400">{p.email}</div></div>
                   <div className="flex flex-col gap-2 min-w-[200px]">
                     <select value={p.role} onChange={(e) => updateRole(p.id, e.target.value)} className="bg-slate-800 border border-slate-700 text-xs text-white rounded-lg px-3 py-2 outline-none focus:border-blue-500 cursor-pointer">
-                      <option value="jefe">Jefe de Ventas</option>
-                      <option value="supervisor">Supervisor</option>
-                      <option value="vendedor_senior">Vendedor Senior</option>
-                      <option value="vendedor">Vendedor Inicial</option>
+                      <option value="jefe">Jefe de Ventas</option><option value="supervisor">Supervisor</option><option value="vendedor_senior">Vendedor Senior</option><option value="vendedor">Vendedor Inicial</option>
                     </select>
-
                     {(p.role === 'vendedor' || p.role === 'vendedor_senior') && (
                       <select value={p.supervisor_id || ''} onChange={(e) => updateSupervisor(p.id, e.target.value)} className="bg-slate-800 border border-slate-700 text-xs text-white rounded-lg px-3 py-2 outline-none focus:border-blue-500 cursor-pointer">
-                        <option value="">Sin supervisor...</option>
-                        {supervisores.map(s => <option key={s.id} value={s.id}>Sup: {s.full_name || s.email}</option>)}
+                        <option value="">Sin supervisor...</option>{supervisores.map(s => <option key={s.id} value={s.id}>Sup: {s.full_name || s.email}</option>)}
                       </select>
                     )}
                   </div>
@@ -952,10 +1036,7 @@ function RolesManagerModal({ onClose, onSaved }: { onClose: () => void; onSaved:
             </div>
           )}
         </div>
-
-        <div className="border-t border-slate-800 px-6 py-4 flex justify-end">
-          <button onClick={onSaved} className="bg-blue-600 hover:bg-blue-500 text-white font-medium px-6 py-2 rounded-xl transition-all">Listo</button>
-        </div>
+        <div className="border-t border-slate-800 px-6 py-4 flex justify-end"><button onClick={onSaved} className="bg-blue-600 hover:bg-blue-500 text-white font-medium px-6 py-2 rounded-xl transition-all">Listo</button></div>
       </div>
     </div>
   );
