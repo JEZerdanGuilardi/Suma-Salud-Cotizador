@@ -130,10 +130,10 @@ export function generarDocumentoPDF(data: any) {
         <div class="ben-desc">Urgencias y emergencias 24hs. Cobertura extendida a nivel nacional e internacional en países limítrofes. Acceso a la Comunidad de Beneficios.</div>
       </div>
     `;
-  } else if (nombrePlanLower.includes('18-30')) {
+  } else if (nombrePlanLower.includes('18-30') || nombrePlanLower.includes('joven')) {
     beneficiosHtml = `
       <div class="ben-card">
-        <div class="ben-title">Plan Individual Joven</div>
+        <div class="ben-title">Plan Individual Joven (18 a 30 años)</div>
         <div class="ben-desc">Atención rápida y directa sólo con credencial. <strong>Consultas cubiertas en todas las especialidades</strong> médicas de nuestra amplia cartilla.</div>
       </div>
       <div class="ben-card">
@@ -180,7 +180,7 @@ export function generarDocumentoPDF(data: any) {
       </div>
       <div class="ben-card">
         <div class="ben-title">Internación y Cirugía 100%</div>
-        <div class="ben-desc">Seguridad hospitalaria. Cobertura del 100% en gastos de internación clínica, quirúrgica y prácticas del Programa Médico Obligatorio (PMO).</div>
+        <div class="ben-desc">Seguridad hospitalaria. Cobertura del 100% en gastos de internación clínica, quirúrgica y practices del Programa Médico Obligatorio (PMO).</div>
       </div>
       <div class="ben-card">
         <div class="ben-title">Emergencias y Asistencia en Viaje</div>
@@ -201,10 +201,8 @@ export function generarDocumentoPDF(data: any) {
         body { font-family: 'Montserrat', sans-serif; margin: 0; padding: 0; -webkit-print-color-adjust: exact; print-color-adjust: exact; background: #e5e7eb; }
         .page { width: 210mm; height: 296mm; overflow: hidden; position: relative; background: #ffffff; page-break-after: always; box-sizing: border-box; }
         
-        /* HOJA 1: PORTADA FULL IMPACTO REDISEÑADA */
         .page-1 { background: linear-gradient(135deg, #0044cc 0%, #002266 100%); color: white; display: flex; flex-direction: column; padding: 60px; }
         
-        /* HEADER CON TEXTOS DUALES Y BIENESTAR CENTRADO */
         .logos-container { display: flex; align-items: center; gap: 30px; margin-bottom: 50px; }
         .logo-box { display: flex; align-items: center; gap: 12px; }
         .logo-box img { width: 45px; height: 45px; border-radius: 10px; background: white; padding: 4px; }
@@ -226,7 +224,6 @@ export function generarDocumentoPDF(data: any) {
         .stat-num.blue { color: #0055ff; font-size: 32px; }
         .stat-desc { font-size: 16px; font-weight: 700; color: #475569; line-height: 1.3; }
 
-        /* HOJA 2: LA COTIZACIÓN EXACTA */
         .page-2 { padding: 0; display: flex; flex-direction: column; }
         .p2-header { background: #ff7300; color: white; padding: 20px 60px; font-size: 22px; font-weight: 900; text-transform: uppercase; letter-spacing: 2px; }
         .p2-title-box { text-align: center; padding: 40px 60px 20px 60px; }
@@ -242,7 +239,6 @@ export function generarDocumentoPDF(data: any) {
 
         .legal-text { padding: 30px 60px; font-size: 12px; color: #94a3b8; text-align: justify; line-height: 1.5; border-top: 1px solid #e2e8f0; }
 
-        /* HOJA 3: PRESTACIONES LLENAS */
         .page-3 { padding: 60px; display: flex; flex-direction: column; }
         .p3-header-text { font-size: 36px; font-weight: 900; color: #0055ff; text-transform: uppercase; margin: 0 0 10px 0; line-height: 1; border-bottom: 6px solid #ff7300; padding-bottom: 20px; display: inline-block; }
         .p3-intro { font-size: 18px; color: #475569; font-weight: 600; margin-bottom: 40px; }
@@ -254,12 +250,8 @@ export function generarDocumentoPDF(data: any) {
       </style>
     </head>
     <body>
-
-      <!-- HOJA 1: PORTADA IMPACTO REDISEÑADA CON TEXTOS DUALES Y BIENESTAR CENTRADO -->
       <div class="page page-1">
-        
         <div class="logos-container">
-          <!-- Logo Suma Salud -->
           <div class="logo-box">
             <img src="/logo.png" alt="Suma" onerror="this.style.display='none'">
             <div>
@@ -267,23 +259,18 @@ export function generarDocumentoPDF(data: any) {
               <span class="logo-sub">Sistema Médico Privado</span>
             </div>
           </div>
-          
           <div class="logo-divider"></div>
-
-          <!-- Texto Bienestar Salud Centrado en la Línea Media -->
           <div class="logo-box">
             <div style="display: flex; flex-direction: column; justify-content: center; height: 45px;">
               <div class="logo-text" style="line-height: 45px;">Bienestar Salud</div>
             </div>
           </div>
         </div>
-        
         <div class="hero-text">
           <div class="hero-badge">Propuesta Exclusiva</div>
           <h1>El respaldo médico<br>que tu familia<br>merece.</h1>
           <p>Diseñamos una cobertura a tu medida para que vivas con la tranquilidad de estar en las mejores manos.</p>
         </div>
-
         <div class="stats-box">
           <h3>Hoy contamos con:</h3>
           <div class="stats-grid">
@@ -307,57 +294,42 @@ export function generarDocumentoPDF(data: any) {
         </div>
       </div>
 
-      <!-- HOJA 2: TABLA DE COTIZACIÓN -->
       <div class="page page-2">
-        <div class="p2-header">
-          | Nueva COTIZACIÓN
-        </div>
+        <div class="p2-header">| Nueva COTIZACIÓN</div>
         <div class="p2-title-box">
           <div class="p2-subtitle">Plan Recomendado</div>
           <div class="p2-title">${data.obra_social} - ${data.nombre_plan}</div>
         </div>
-
         <div class="table-wrap">
           <table>
             <tr class="row-grey"><td>Grupo Familiar Detallado</td></tr>
             <tr class="row-white"><td>${grupoFamiliarHtml}</td></tr>
-
             <tr class="row-grey"><td>Valor Lista (Base)</td></tr>
             <tr class="row-white"><td>${formatMoney(base)}</td></tr>
-
             ${aportesRow}
             ${descuentoRow}
-
-            <tr class="row-total-label">
-              <td>${etiquetaTotal}</td>
-            </tr>
+            <tr class="row-total-label"><td>${etiquetaTotal}</td></tr>
             <tr class="row-total-val">
               <td>
                 ${formatMoney(final)}
-                ${descuentoMonto > 0 ? `<div style="font-size: 16px; color: #1e293b; font-weight: 800; margin-top: 15px; text-transform: uppercase; letter-spacing: 0px;">Valor regular mensual: ${formatMoney(precioRegular)}</div>` : ''}
+                ${descuentoMonto > 0 ? `<div style="font-size: 16px; color: #1e293b; font-weight: 800; margin-top: 15px; text-transform: uppercase;">Valor regular mensual: ${formatMoney(precioRegular)}</div>` : ''}
               </td>
             </tr>
           </table>
         </div>
-
         <div class="legal-text">
           <strong>Cotización generada para:</strong> ${data.cliente_nombre || 'Consumidor Final'} | <strong>Fecha de emisión:</strong> ${data.fecha}<br><br>
           * Los datos exhibidos en el siguiente reporte son una aproximación comercial de los valores finales. Pueden variar por ajustes de precios de las prestadoras de salud correspondientes o dependiendo de la fidelidad de los datos brindados al Cotizador al momento del alta. Suma Salud - Todos los derechos reservados.
         </div>
       </div>
 
-      <!-- HOJA 3: PRESTACIONES DINÁMICAS POR PLAN -->
       <div class="page page-3">
         <div>
           <h2 class="p3-header-text">Alcance de la<br>Cobertura</h2>
           <div class="p3-intro">Principales beneficios garantizados con el plan <strong>${data.nombre_plan}</strong>:</div>
         </div>
-
-        <div class="benefits-container">
-          ${beneficiosHtml}
-        </div>
+        <div class="benefits-container">${beneficiosHtml}</div>
       </div>
-
       <script>
         document.title = "${tituloDocumento}";
         setTimeout(() => { window.print(); }, 800);
@@ -369,8 +341,6 @@ export function generarDocumentoPDF(data: any) {
   ventana.document.write(htmlContenido.replace('<\/script>', '</script>'));
   ventana.document.close();
 }
-// ============================================================================
-
 
 export function CotizacionesView({ cotizaciones, onReload, hideMetrics = false }: Props) {
   const { profile } = useAuth();
@@ -400,52 +370,31 @@ export function CotizacionesView({ cotizaciones, onReload, hideMetrics = false }
 
   async function changeEtapa(c: Cotizacion, etapa: Etapa) {
     let nuevasNotas = c.notas || '';
-    
     if (etapa === 'Cerrado perdido') {
       const motivo = window.prompt("Ingresá el motivo de pérdida (ej: Precio, Se fue a la competencia, No contesta):");
       if (motivo && motivo.trim() !== '') {
         nuevasNotas = nuevasNotas ? `${nuevasNotas}\n\n[🚨 PERDIDO POR: ${motivo.toUpperCase()}]` : `[🚨 PERDIDO POR: ${motivo.toUpperCase()}]`;
       }
     }
-
     try {
-      const { error } = await supabase
-        .from('cotizaciones')
-        .update({ etapa: etapa, notas: nuevasNotas })
-        .eq('id', c.id);
-        
-      if (error) {
-        console.error("Error al actualizar etapa:", error.message);
-        alert(`No se pudo cambiar la etapa: ${error.message}`);
-        return;
-      }
-      
+      const { error } = await supabase.from('cotizaciones').update({ etapa: etapa, notas: nuevasNotas }).eq('id', c.id);
+      if (error) { alert(`No se pudo cambiar la etapa: ${error.message}`); return; }
       onReload();
-    } catch (err) {
-      console.error("Error inesperado:", err);
-    }
+    } catch (err) { console.error("Error inesperado:", err); }
   }
 
   async function deleteCotizacion(id: string) {
-    if (!window.confirm('¿Seguro que deseas eliminar esta cotización? Esta acción no se puede deshacer.')) return;
+    if (!window.confirm('¿Seguro que deseas eliminar esta cotización?')) return;
     const { error } = await supabase.from('cotizaciones').delete().eq('id', id);
     if (error) { console.error(error); return; }
     onReload();
   }
 
-  function openNew() {
-    setEditing(null);
-    setShowForm(true);
-  }
-
-  function openEdit(c: Cotizacion) {
-    setEditing(c);
-    setShowForm(true);
-  }
+  function openNew() { setEditing(null); setShowForm(true); }
+  function openEdit(c: Cotizacion) { setEditing(c); setShowForm(true); }
 
   function exportarCSV() {
     if (filtered.length === 0) return alert("No hay datos para exportar.");
-    
     const headers = ['Fecha', 'Cliente', 'Modalidad', 'Obra Social', 'Plan', 'Vendedor', 'Etapa', 'Diferencia Abonar', 'Notas'];
     const rows = filtered.map(c => [
       new Date(c.creado_en).toLocaleDateString('es-AR'),
@@ -458,10 +407,7 @@ export function CotizacionesView({ cotizaciones, onReload, hideMetrics = false }
       c.precio_total,
       `"${(c.notas || '').replace(/"/g, '""').replace(/\n/g, ' ')}"`
     ]);
-
-    const csvContent = "data:text/csv;charset=utf-8,\uFEFF" + 
-      [headers.join(','), ...rows.map(e => e.join(','))].join('\n');
-    
+    const csvContent = "data:text/csv;charset=utf-8,\uFEFF" + [headers.join(','), ...rows.map(e => e.join(','))].join('\n');
     const encodedUri = encodeURI(csvContent);
     const link = document.createElement("a");
     link.setAttribute("href", encodedUri);
@@ -479,7 +425,6 @@ export function CotizacionesView({ cotizaciones, onReload, hideMetrics = false }
             <MetricCard icon={<Clock className="w-5 h-5" />} label="Cotizaciones Activas" value={totalActivas.toString()} color="sky" />
             <MetricCard icon={<CheckCircle2 className="w-5 h-5" />} label="Cerrado ganado" value={totalCerradas.toString()} color="emerald" />
           </div>
-
           <div className="bg-slate-900/40 border border-slate-800 rounded-xl p-4">
             <h3 className="text-sm font-medium text-slate-300 mb-3 flex items-center gap-2">
               <TrendingUp className="w-4 h-4 text-blue-400" /> Seguimiento por etapas
@@ -492,9 +437,7 @@ export function CotizacionesView({ cotizaciones, onReload, hideMetrics = false }
                     key={etapa}
                     onClick={() => setFilterEtapa(filterEtapa === etapa ? 'Todas' : etapa)}
                     className={`text-center p-3 rounded-lg border transition-all ${
-                      filterEtapa === etapa
-                        ? ETAPA_COLORS[etapa] + ' ring-2 ring-offset-2 ring-offset-slate-900 ring-white/20'
-                        : 'bg-slate-800/40 border-slate-700 hover:border-slate-600'
+                      filterEtapa === etapa ? ETAPA_COLORS[etapa] + ' ring-2 ring-offset-2 ring-offset-slate-900 ring-white/20' : 'bg-slate-800/40 border-slate-700 hover:border-slate-600'
                     }`}
                   >
                     <div className="text-2xl font-bold text-white">{count}</div>
@@ -522,7 +465,6 @@ export function CotizacionesView({ cotizaciones, onReload, hideMetrics = false }
               className="w-full bg-slate-800/60 border border-slate-700 rounded-lg pl-9 pr-3 py-2 text-sm text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500/40"
             />
           </div>
-          
           {(isJefe || isSupervisor) && vendedoresList.length > 0 && (
             <select
               value={filterVendedor}
@@ -533,28 +475,14 @@ export function CotizacionesView({ cotizaciones, onReload, hideMetrics = false }
               {vendedoresList.map(v => <option key={v} value={v}>{v}</option>)}
             </select>
           )}
-
-          <button
-            onClick={exportarCSV}
-            className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-medium px-4 py-2 rounded-lg transition-all shadow-lg shadow-emerald-600/20 whitespace-nowrap"
-          >
+          <button onClick={exportarCSV} className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-medium px-4 py-2 rounded-lg transition-all shadow-lg shadow-emerald-600/25 whitespace-nowrap">
             <Download className="w-4 h-4" /> Exportar CSV
           </button>
-
-          <button
-            onClick={openNew}
-            className="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-white text-sm font-medium px-4 py-2 rounded-lg transition-all shadow-lg shadow-blue-600/20 whitespace-nowrap"
-          >
+          <button onClick={openNew} className="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-white text-sm font-medium px-4 py-2 rounded-lg transition-all shadow-lg shadow-blue-600/20 whitespace-nowrap">
             <Plus className="w-4 h-4" /> Nueva cotización
           </button>
         </div>
       </div>
-
-      {!hideMetrics && filterEtapa !== 'Todas' && (
-        <button onClick={() => setFilterEtapa('Todas')} className="text-xs text-blue-400 hover:text-blue-300">
-          Quitar filtro de etapa ({filterEtapa})
-        </button>
-      )}
 
       <div className="space-y-3">
         {filtered.length === 0 && (
@@ -577,9 +505,7 @@ export function CotizacionesView({ cotizaciones, onReload, hideMetrics = false }
                     {(isJefe || isSupervisor) && c.email_vendedor && <span className="text-blue-400 font-medium">Vendedor: {c.email_vendedor}</span>}
                   </div>
                   <div className="text-xs text-slate-500">{familyStructureLabel(edadesAdherentesFromCotizacion(c).length)}</div>
-                  {c.notas && (
-                    <div className="text-xs text-amber-500/80 mt-1.5 italic line-clamp-2">Nota: {c.notas}</div>
-                  )}
+                  {c.notas && (<div className="text-xs text-amber-500/80 mt-1.5 italic line-clamp-2">Nota: {c.notas}</div>)}
                 </div>
               </div>
               <div className="flex items-center gap-3">
@@ -588,9 +514,7 @@ export function CotizacionesView({ cotizaciones, onReload, hideMetrics = false }
                     <>
                       <div className="text-xs text-slate-400">Diferencia a abonar</div>
                       {c.tiene_descuento && c.precio_original && c.precio_original > c.precio_total && (
-                        <div className="text-[10px] text-slate-500 line-through">
-                          {formatCurrency(Number(c.precio_original))}
-                        </div>
+                        <div className="text-[10px] text-slate-500 line-through">{formatCurrency(Number(c.precio_original))}</div>
                       )}
                       <div className="text-lg font-semibold text-amber-400">{formatCurrency(Number(c.precio_total))}</div>
                     </>
@@ -632,15 +556,12 @@ export function CotizacionesView({ cotizaciones, onReload, hideMetrics = false }
                 </div>
               </div>
             </div>
-            
             <div className="flex flex-wrap gap-1.5 mt-3 pt-3 border-t border-slate-800">
               {ETAPAS.map((etapa) => (
                 <button
                   key={etapa}
                   onClick={() => changeEtapa(c, etapa)}
-                  className={`text-xs px-2.5 py-1 rounded-md transition-all ${
-                    c.etapa === etapa ? ETAPA_COLORS[etapa] : 'bg-slate-800/40 text-slate-500 hover:text-slate-300'
-                  }`}
+                  className={`text-xs px-2.5 py-1 rounded-md transition-all ${c.etapa === etapa ? ETAPA_COLORS[etapa] : 'bg-slate-800/40 text-slate-500 hover:text-slate-300'}`}
                 >
                   {etapa}
                 </button>
@@ -792,6 +713,41 @@ function CotizacionForm({ editing, obrasSociales, monotributo, precios, onClose,
   function calcular() {
     let recs = recomendarPlanes(form, obrasSociales, monotributo, precios);
     
+    // VALIDACIÓN ESTRICTA PARA EL PLAN 18-30
+    const edadTitular = Number(form.edad_mayor) || 0;
+    const esIndividual = form.edades_adherentes.length === 0;
+    const esEdadValida1830 = edadTitular >= 18 && edadTitular <= 30;
+
+    // 1. Limpiamos cualquier "Plan 18-30" que venga de Supabase si no cumple las condiciones
+    recs = recs.filter(r => {
+      const nombreLower = (r.plan.nombre_plan || '').toLowerCase();
+      if (nombreLower.includes('18-30') || nombreLower.includes('joven')) {
+        return esIndividual && esEdadValida1830;
+      }
+      return true; // Dejamos el resto de los planes tranquilos (1000, 2000, 3000)
+    });
+
+    // 2. Inyección de seguridad (Por si Supabase falla o todavía no subiste el CSV).
+    // Usamos 'push' para que aparezca obligatoriamente ABAJO en la lista.
+    if (esIndividual && esEdadValida1830) {
+      const yaExiste1830 = recs.some(r => (r.plan.nombre_plan || '').toLowerCase().includes('18-30'));
+      if (!yaExiste1830) {
+        recs.push({
+          plan: {
+            id: 'plan-18-30-db',
+            obra_social: 'Suma Salud',
+            nombre_plan: 'Plan 18-30'
+          },
+          precioTotal: 105000,
+          diferencia: 105000,
+          detalle: 'Plan exclusivo para jóvenes de 18 a 30 años (Individual). Cobertura prepaga/mixta.',
+          alcanza: false,
+          subtotal_calculado: 105000,
+          descuento_monto_calculado: 0
+        } as any);
+      }
+    }
+
     recs = recs.map(rec => {
       let base = rec.precioTotal;
       let subtotal = base;
@@ -810,7 +766,6 @@ function CotizacionForm({ editing, obrasSociales, monotributo, precios, onClose,
       }
 
       let diferenciaFinal = Math.max(0, subtotal - descuentoMonto);
-
       let mensaje = '';
       let alcanza = true;
 
@@ -910,7 +865,6 @@ function CotizacionForm({ editing, obrasSociales, monotributo, precios, onClose,
         </div>
 
         <div className="p-6 space-y-5">
-          {/* CAJA DE APORTE GLOBAL ESTILO IMAGEN */}
           {(form.modalidad_pago === 'Monotributo' || (form.modalidad_pago === 'Bono de sueldo' && form.bono_item_obra_social > 0)) && (
             <div className="text-sm text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 rounded-lg px-4 py-3 flex items-center gap-2">
               <DollarSign className="w-4 h-4 flex-shrink-0" />
@@ -957,6 +911,10 @@ function CotizacionForm({ editing, obrasSociales, monotributo, precios, onClose,
                 onChange={(e) => update('edad_mayor', Number(e.target.value))}
                 className="w-full bg-slate-800/60 border border-slate-700 rounded-lg px-4 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-blue-500/40"
               />
+              {/* NOTA DINÁMICA SOLO SI ES APTO */}
+              {form.edad_mayor >= 18 && form.edad_mayor <= 30 && form.edades_adherentes.length === 0 && (
+                <p className="text-xs text-blue-400 mt-1">💡 Titular apto para el <strong>Plan 18-30</strong> ($105.000).</p>
+              )}
             </div>
             
             {form.modalidad_pago === 'Prepago' && (
@@ -1135,7 +1093,7 @@ function CotizacionForm({ editing, obrasSociales, monotributo, precios, onClose,
             Calcular y recomendar planes
           </button>
 
-          {/* LISTADO DE RECOMENDACIONES CON MANEJO DE ERROR POR EDADES */}
+          {/* LISTADO DE RECOMENDACIONES */}
           {recomendaciones !== null && (
             <div className="space-y-3 mt-6">
               <div className="flex items-end justify-between border-b border-slate-800 pb-2 mb-4">
@@ -1148,10 +1106,9 @@ function CotizacionForm({ editing, obrasSociales, monotributo, precios, onClose,
               </div>
 
               {recomendaciones.length === 0 ? (
-                <div className="text-center py-6 bg-slate-800/40 rounded-xl border border-slate-700/50">
+                <div className="text-center py-6 bg-slate-800/40 rounded-xl border border-slate-750">
                   <AlertCircle className="w-8 h-8 text-amber-500 mx-auto mb-2 opacity-80" />
-                  <p className="text-sm font-medium text-slate-300">No hay planes disponibles para estas edades.</p>
-                  <p className="text-xs text-slate-500 mt-1 px-4">Verificá que las edades cargadas ({form.edad_mayor} y adherentes) se encuentren dentro de los topes permitidos en el tarifario de Suma Salud.</p>
+                  <p className="text-sm font-medium text-slate-300">No hay planes disponibles para estas condiciones.</p>
                 </div>
               ) : (
                 recomendaciones.map((rec) => {
