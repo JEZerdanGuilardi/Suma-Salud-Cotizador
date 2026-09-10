@@ -410,11 +410,13 @@ function JefeView({ cotizaciones, onReload }: { cotizaciones: Cotizacion[]; onRe
   let bonosSalto = 0;
   let rangoTexto = "0-25 cápitas";
   let estadoCapitas = "Preocupante";
-  let colorCapitas = "text-amber-400";
-  let bgCapitas = "bg-amber-400/10 border-amber-400/20";
+  let colorCapitas = "text-yellow-400";
+  let bgCapitas = "bg-yellow-400/10 border-yellow-400/20";
   let porcentajeCapitas = "150%";
   let limiteSiguiente = 25;
   let proximoRangoStr = "200%";
+  let gradienteFondoCard = "from-slate-900 to-yellow-950/30 border-yellow-500/20";
+  let colorBarraProgreso = "bg-yellow-400";
   
   if (capitasTotales >= 26 && capitasTotales <= 50) {
     multiplicador = 2.0; 
@@ -426,6 +428,8 @@ function JefeView({ cotizaciones, onReload }: { cotizaciones: Cotizacion[]; onRe
     porcentajeCapitas = "200%";
     proximoRangoStr = "250%"; 
     limiteSiguiente = 50;
+    gradienteFondoCard = "from-slate-900 to-emerald-950/30 border-emerald-500/30";
+    colorBarraProgreso = "bg-emerald-400";
   } else if (capitasTotales >= 51 && capitasTotales <= 100) {
     multiplicador = 2.5; 
     bonosSalto = 800000; 
@@ -436,6 +440,8 @@ function JefeView({ cotizaciones, onReload }: { cotizaciones: Cotizacion[]; onRe
     porcentajeCapitas = "250%";
     proximoRangoStr = "300%"; 
     limiteSiguiente = 100;
+    gradienteFondoCard = "from-slate-900 to-blue-950/30 border-blue-500/30";
+    colorBarraProgreso = "bg-blue-400";
   } else if (capitasTotales >= 101) {
     multiplicador = 3.0; 
     bonosSalto = 1200000; 
@@ -446,17 +452,8 @@ function JefeView({ cotizaciones, onReload }: { cotizaciones: Cotizacion[]; onRe
     porcentajeCapitas = "300%";
     proximoRangoStr = "MAX"; 
     limiteSiguiente = 0;
-  } else {
-    // 0 a 25 cápitas
-    multiplicador = 1.5;
-    bonosSalto = 0;
-    rangoTexto = "0-25 cápitas";
-    estadoCapitas = "Preocupante";
-    colorCapitas = "text-yellow-400";
-    bgCapitas = "bg-yellow-400/10 border-yellow-400/20";
-    porcentajeCapitas = "150%";
-    proximoRangoStr = "200%";
-    limiteSiguiente = 25;
+    gradienteFondoCard = "from-slate-900 to-purple-950/30 border-purple-500/30";
+    colorBarraProgreso = "bg-purple-400";
   }
 
   const gananciaGlobalJefe = (volumenBruto * multiplicador) + bonosSalto;
@@ -545,7 +542,7 @@ function JefeView({ cotizaciones, onReload }: { cotizaciones: Cotizacion[]; onRe
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Módulo de Cápitas Ingresadas con Desglose */}
-        <div className="bg-gradient-to-br from-slate-900 to-amber-950/40 border border-slate-800 p-6 rounded-2xl shadow-lg relative overflow-hidden flex flex-col justify-between">
+        <div className={`bg-gradient-to-br ${gradienteFondoCard} border p-6 rounded-2xl shadow-lg relative overflow-hidden flex flex-col justify-between transition-all duration-500`}>
            <div className="absolute top-0 right-0 p-4 opacity-10"><Users className="w-20 h-20"/></div>
            <div>
              <div className="text-sm text-slate-400 flex items-center gap-2 mb-2"><TrendingUp className="w-4 h-4 text-amber-400"/> Cápitas Ingresadas</div>
@@ -557,13 +554,9 @@ function JefeView({ cotizaciones, onReload }: { cotizaciones: Cotizacion[]; onRe
 
            {/* Desglose de Cápitas con colores y porcentajes solicitados */}
            <div className="my-4 space-y-2">
-             <div className={`flex items-center justify-between px-3 py-2 rounded-xl border ${bgCapitas}`}>
+             <div className={`flex items-center justify-between px-3 py-2 rounded-xl border ${bgCapitas} transition-all duration-300`}>
                <div className="flex items-center gap-2">
-                 <span className={`w-3 h-3 rounded-full ${
-                   capitasTotales <= 25 ? 'bg-yellow-400' :
-                   capitasTotales <= 50 ? 'bg-emerald-400' :
-                   capitasTotales <= 100 ? 'bg-blue-400' : 'bg-purple-400'
-                 }`}></span>
+                 <span className={`w-3 h-3 rounded-full ${colorBarraProgreso}`}></span>
                  <span className="text-xs font-bold text-white uppercase tracking-wider">{rangoTexto} ({estadoCapitas})</span>
                </div>
                <span className={`text-xs font-black ${colorCapitas}`}>{porcentajeCapitas}</span>
@@ -583,7 +576,7 @@ function JefeView({ cotizaciones, onReload }: { cotizaciones: Cotizacion[]; onRe
                 {limiteSiguiente > 0 ? <span className="text-amber-400">Próximo: {proximoRangoStr}</span> : <span className="text-purple-400 font-bold">MÁXIMO ALCANZADO</span>}
               </div>
               <div className="w-full bg-slate-950 h-2 rounded-full overflow-hidden">
-                <div className="bg-amber-400 h-full rounded-full transition-all duration-1000" style={{ width: `${Math.min((capitasTotales / (limiteSiguiente || 101)) * 100, 100)}%` }}></div>
+                <div className={`${colorBarraProgreso} h-full rounded-full transition-all duration-1000`} style={{ width: `${Math.min((capitasTotales / (limiteSiguiente || 101)) * 100, 100)}%` }}></div>
               </div>
            </div>
         </div>
@@ -602,12 +595,14 @@ function JefeView({ cotizaciones, onReload }: { cotizaciones: Cotizacion[]; onRe
         </div>
 
         {/* Panel renombrado: Volumen real de lo vendido */}
-        <div className="bg-gradient-to-br from-slate-900 to-sky-950/40 border border-slate-800 p-6 rounded-2xl shadow-lg flex flex-col justify-between">
+        <div className="bg-gradient-to-br from-slate-900 to-sky-950/40 border border-slate-800 p-6 rounded-2xl shadow-lg flex flex-col justify-between text-center">
           <div>
-            <div className="text-sm text-slate-400 flex items-center gap-2 mb-2"><DollarSign className="w-4 h-4 text-sky-400"/> Volumen real de lo vendido</div>
-            <div className="text-4xl font-bold text-white mt-4">${volumenBruto.toLocaleString('es-AR')}</div>
+            <div className="text-xs text-slate-400 font-bold uppercase tracking-wider flex items-center justify-center gap-2 mb-2"><DollarSign className="w-4 h-4 text-sky-400"/> Volumen real de lo vendido</div>
           </div>
-          <div className="text-xs text-slate-500 mt-6 pt-4 border-t border-slate-800/80">
+          <div className="my-auto py-2">
+            <div className="text-3xl sm:text-4xl lg:text-4xl font-extrabold text-white tracking-tight">${volumenBruto.toLocaleString('es-AR')}</div>
+          </div>
+          <div className="text-xs text-slate-500 pt-3 border-t border-slate-800/80">
              En {ganadas.length} fichas cerradas por el equipo.
           </div>
         </div>
@@ -782,6 +777,23 @@ function SupervisorView({ cotizaciones, onReload, profile }: { cotizaciones: Cot
   const gananciaTotalSup = comisionPersonal + bonoEquipo;
   const porcentajeRueda = Math.min((fichasEquipoTotales / 45) * 100, 100);
 
+  // Cálculos para el Ranking y la Pizza
+  const planesVendidos: Record<string, number> = {};
+  ganadasEquipo.forEach(c => {
+    const planName = `${c.obra_social} - ${c.nombre_plan}`;
+    planesVendidos[planName] = (planesVendidos[planName] || 0) + 1;
+  });
+
+  const topPlanes = Object.entries(planesVendidos).sort((a, b) => b[1] - a[1]).slice(0, 4);
+  const totalPlanesCount = ganadasEquipo.length;
+  const dataPieChart = Object.entries(planesVendidos).map(([name, count]) => ({
+    name,
+    value: totalPlanesCount > 0 ? Number(((count / totalPlanesCount) * 100).toFixed(1)) : 0,
+    count
+  })).sort((a, b) => b.value - a.value);
+
+  const PIE_COLORS = ['#3B82F6', '#10B981', '#FACC15', '#EC4899', '#8B5CF6', '#06B6D4'];
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -848,6 +860,57 @@ function SupervisorView({ cotizaciones, onReload, profile }: { cotizaciones: Cot
         </div>
       </div>
       
+      {/* Nuevos Gráficos de Planes agregados para el Supervisor */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Gráfico de Pizza Porcentual de Planes Vendidos */}
+        <div className="bg-slate-900/50 border border-slate-800 rounded-2xl p-5 shadow-lg flex flex-col">
+          <h3 className="text-sm font-semibold text-white mb-4 flex items-center gap-2"><PieChartIcon className="w-4 h-4 text-purple-400"/> Escala total porcentual de lo vendido</h3>
+          {dataPieChart.length > 0 ? (
+            <div className="flex flex-col sm:flex-row items-center gap-4 flex-1">
+              <div className="w-full sm:w-1/2 h-56">
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                    <Pie data={dataPieChart} cx="50%" cy="50%" innerRadius={45} outerRadius={75} paddingAngle={4} dataKey="value">
+                      {dataPieChart.map((entry, index) => (
+                        <Cell key={`cell-${index}`} fill={PIE_COLORS[index % PIE_COLORS.length]} />
+                      ))}
+                    </Pie>
+                    <Tooltip formatter={(val: any) => [`${val}%`, 'Participación']} contentStyle={{ backgroundColor: '#0f1523', borderColor: '#334155', borderRadius: '8px', color: '#fff' }} />
+                  </PieChart>
+                </ResponsiveContainer>
+              </div>
+              <div className="w-full sm:w-1/2 space-y-2 pr-2">
+                {dataPieChart.map((item, idx) => (
+                  <div key={item.name} className="flex items-center justify-between text-xs bg-slate-950/50 p-2 rounded-lg border border-slate-800/80">
+                    <div className="flex items-center gap-2 truncate pr-2">
+                      <span className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: PIE_COLORS[idx % PIE_COLORS.length] }}></span>
+                      <span className="text-slate-300 truncate font-medium">{item.name}</span>
+                    </div>
+                    <span className="text-white font-bold flex-shrink-0">{item.value}% <span className="text-slate-500 font-normal">({item.count})</span></span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : (
+            <div className="text-slate-500 text-sm py-16 text-center">Sin datos para mostrar en el gráfico.</div>
+          )}
+        </div>
+
+        {/* Ranking Tradicional */}
+        <div className="bg-slate-900/50 border border-slate-800 rounded-2xl p-5 shadow-lg">
+          <h3 className="text-sm font-semibold text-white mb-4 flex items-center gap-2"><PieChartIcon className="w-4 h-4 text-purple-400"/> Planes más vendidos (Ranking Tradicional)</h3>
+          <div className="space-y-4">
+            {topPlanes.map(([plan, count]) => (
+              <div key={plan}>
+                <div className="flex justify-between text-xs mb-1"><span className="text-slate-300 font-medium truncate pr-4">{plan}</span><span className="text-white font-bold flex-shrink-0">{count} cierres</span></div>
+                <div className="w-full bg-slate-800 h-2 rounded-full overflow-hidden"><div className="bg-purple-500 h-full rounded-full" style={{ width: `${(count / (topPlanes[0]?.[1] || 1)) * 100}%` }}></div></div>
+              </div>
+            ))}
+            {topPlanes.length === 0 && <div className="text-slate-500 text-sm">Sin datos.</div>}
+          </div>
+        </div>
+      </div>
+
       <CotizacionesView cotizaciones={dataFiltrada} onReload={onReload} hideMetrics={true} />
     </div>
   );
