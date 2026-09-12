@@ -13,7 +13,7 @@ import {
   totalIntegrantes,
   edadesAdherentesFromCotizacion,
 } from '@/lib/calculations';
-import { Calculator, AlertTriangle, Users, CheckCircle2, DollarSign, Building2, Plus, ArrowRight, Loader2, X, TrendingUp, Clock, Search, Trash2, Pencil, Sparkles, Check, AlertCircle, Tag, FileText as FilePdfIcon, Download } from 'lucide-react';
+import { Calculator, AlertTriangle, Users, CheckCircle2, DollarSign, Building2, Plus, ArrowRight, Loader2, X, TrendingUp, Clock, Search, Trash2, Pencil, Sparkles, Check, AlertCircle, Tag, FileText as FilePdfIcon, Download, ListChecks } from 'lucide-react';
 
 const ETAPAS: Etapa[] = [
   'Nuevo',
@@ -44,7 +44,7 @@ interface Props {
 }
 
 // ============================================================================
-// FUNCIÓN DE PDF PREMIUM (SOLO TEXTO BIENESTAR SALUD ALINEADO)
+// FUNCIÓN DE PDF PREMIUM 
 // ============================================================================
 export function generarDocumentoPDF(data: any) {
   const ventana = window.open('', '_blank');
@@ -55,7 +55,6 @@ export function generarDocumentoPDF(data: any) {
 
   const formatMoney = (val: number) => new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS', minimumFractionDigits: 2 }).format(val);
 
-  // DESGLOSE GRUPO FAMILIAR LISTADO
   const adherentes = data.edades_adherentes || [];
   let grupoFamiliarHtml = `<div style="font-size: 22px; font-weight: 900; margin-bottom: 5px;">Titular: ${nombreTitular} (${data.edad_mayor} años)</div>`;
   
@@ -67,7 +66,6 @@ export function generarDocumentoPDF(data: any) {
     grupoFamiliarHtml += `<div style="font-size: 14px; font-weight: 700; color: #64748b; text-transform: uppercase; margin-top: 4px;">(Plan Individual)</div>`;
   }
 
-  // CÁLCULO REVERSO INTELIGENTE DE APORTES Y DESCUENTOS
   let base = Number(data.precio_original) || 0;
   let final = Number(data.precio_total) || 0;
   let descuentoMonto = data.descuento_monto_calculado || 0;
@@ -107,7 +105,6 @@ export function generarDocumentoPDF(data: any) {
 
   const etiquetaTotal = descuentoMonto > 0 ? 'TOTAL MES DE BIENVENIDA' : 'TOTAL FINAL MENSUAL';
 
-  // LÓGICA DINÁMICA DE BENEFICIOS SEGÚN EL PLAN
   const nombrePlanLower = (data.nombre_plan || '').toLowerCase();
   let beneficiosHtml = '';
 
@@ -383,6 +380,20 @@ export function CotizacionesView({ cotizaciones, onReload, hideMetrics = false }
     } catch (err) { console.error("Error inesperado:", err); }
   }
 
+  // NUEVA FUNCIÓN: Sincroniza la checklist en tiempo real con Supabase
+  async function toggleChecklistItem(id: string, currentChecklist: any, docItem: string) {
+    const current = Array.isArray(currentChecklist) ? currentChecklist : [];
+    const newChecklist = current.includes(docItem)
+      ? current.filter((item: string) => item !== docItem)
+      : [...current, docItem];
+
+    try {
+      const { error } = await supabase.from('cotizaciones').update({ checklist: newChecklist }).eq('id', id);
+      if (error) { console.error("Error al actualizar checklist:", error); return; }
+      onReload();
+    } catch (err) { console.error("Error inesperado:", err); }
+  }
+
   async function deleteCotizacion(id: string) {
     if (!window.confirm('¿Seguro que deseas eliminar esta cotización?')) return;
     const { error } = await supabase.from('cotizaciones').delete().eq('id', id);
@@ -490,85 +501,125 @@ export function CotizacionesView({ cotizaciones, onReload, hideMetrics = false }
             No hay cotizaciones que coincidan con la búsqueda.
           </div>
         )}
-        {filtered.map((c) => (
-          <div key={c.id} className="bg-slate-900/40 border border-slate-800 rounded-xl p-4 hover:border-slate-700 transition-all">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2 flex-wrap">
-                  <span className="font-medium text-white truncate">{c.cliente_nombre || 'Sin nombre'}</span>
-                  <span className={`text-xs px-2 py-0.5 rounded-full border ${ETAPA_COLORS[c.etapa] ?? 'bg-slate-500/15 text-slate-300 border-slate-500/30'}`}>{c.etapa}</span>
-                </div>
-                <div className="text-sm text-slate-400 mt-1 space-y-1">
-                  <div className="flex flex-wrap gap-x-4 gap-y-1">
-                    <span className="text-slate-300">{c.obra_social} - {c.nombre_plan}</span>
-                    <span className="text-slate-400">{c.modalidad_pago}</span>
-                    {(isJefe || isSupervisor) && c.email_vendedor && <span className="text-blue-400 font-medium">Vendedor: {c.email_vendedor}</span>}
+        {filtered.map((c) => {
+          // Lógica de Checklist dinámica
+          const docsToAsk = [
+            "DNI titular (Frente y Dorso)",
+            "Comprobante de pago (Mes bienvenida)",
+            "Correo electrónico",
+            "Declaración de Peso y Altura",
+            ...(c.modalidad_pago === 'Bono de sueldo' ? ["Último Bono de Sueldo", "Clave Fiscal"] : []),
+            ...(c.modalidad_pago === 'Monotributo' ? ["Clave Fiscal", "Formulario 184", "Formulario 152"] : []),
+            ...((c.edades_hijos && c.edades_hijos.length > 0) ? ["DNI de todos los adherentes (Frente y Dorso)"] : []),
+            "DNI de la tarjeta (SOLO si paga un tercero)"
+          ];
+          const currentChecklist = Array.isArray((c as any).checklist) ? (c as any).checklist : [];
+
+          return (
+            <div key={c.id} className="bg-slate-900/40 border border-slate-800 rounded-xl p-4 hover:border-slate-700 transition-all">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="font-medium text-white truncate">{c.cliente_nombre || 'Sin nombre'}</span>
+                    <span className={`text-xs px-2 py-0.5 rounded-full border ${ETAPA_COLORS[c.etapa] ?? 'bg-slate-500/15 text-slate-300 border-slate-500/30'}`}>{c.etapa}</span>
                   </div>
-                  <div className="text-xs text-slate-500">{familyStructureLabel(edadesAdherentesFromCotizacion(c).length)}</div>
-                  {c.notas && (<div className="text-xs text-amber-500/80 mt-1.5 italic line-clamp-2">Nota: {c.notas}</div>)}
-                </div>
-              </div>
-              <div className="flex items-center gap-3">
-                <div className="text-right">
-                  {Number(c.precio_total) > 0 ? (
-                    <>
-                      <div className="text-xs text-slate-400">Diferencia a abonar</div>
-                      {c.tiene_descuento && c.precio_original && c.precio_original > c.precio_total && (
-                        <div className="text-[10px] text-slate-500 line-through">{formatCurrency(Number(c.precio_original))}</div>
-                      )}
-                      <div className="text-lg font-semibold text-amber-400">{formatCurrency(Number(c.precio_total))}</div>
-                    </>
-                  ) : (
-                    <>
-                      <div className="text-xs text-slate-400">Cobertura</div>
-                      <div className="text-sm font-semibold text-emerald-400">Cubierto 100%</div>
-                    </>
-                  )}
-                  <div className="text-xs text-slate-500 mt-0.5">
-                    {new Date(c.creado_en).toLocaleDateString('es-AR', { timeZone: 'America/Argentina/Buenos_Aires' })}
+                  <div className="text-sm text-slate-400 mt-1 space-y-1">
+                    <div className="flex flex-wrap gap-x-4 gap-y-1">
+                      <span className="text-slate-300">{c.obra_social} - {c.nombre_plan}</span>
+                      <span className="text-slate-400">{c.modalidad_pago}</span>
+                      {(isJefe || isSupervisor) && c.email_vendedor && <span className="text-blue-400 font-medium">Vendedor: {c.email_vendedor}</span>}
+                    </div>
+                    <div className="text-xs text-slate-500">{familyStructureLabel(edadesAdherentesFromCotizacion(c).length)}</div>
+                    {c.notas && (<div className="text-xs text-amber-500/80 mt-1.5 italic line-clamp-2">Nota: {c.notas}</div>)}
                   </div>
                 </div>
-                <div className="flex gap-1 ml-3 pl-3 border-l border-slate-800">
-                  <button onClick={() => {
-                    generarDocumentoPDF({
-                        fecha: new Date(c.creado_en).toLocaleDateString('es-AR'),
-                        cliente_nombre: c.cliente_nombre,
-                        modalidad_pago: c.modalidad_pago,
-                        edad_mayor: c.edad_mayor,
-                        edades_adherentes: c.edades_hijos || [],
-                        obra_social: c.obra_social,
-                        nombre_plan: c.nombre_plan,
-                        precio_original: c.precio_original || c.precio_total, 
-                        tiene_descuento: c.tiene_descuento,
-                        descuento_tipo: c.descuento_tipo,
-                        descuento_valor: c.descuento_valor,
-                        precio_total: c.precio_total
-                    });
-                  }} className="p-2 text-slate-400 hover:text-blue-400 hover:bg-slate-800 rounded-lg transition-all" title="Descargar PDF">
-                    <FilePdfIcon className="w-4 h-4" />
-                  </button>
-                  <button onClick={() => openEdit(c)} className="p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition-all" title="Editar">
-                    <Pencil className="w-4 h-4" />
-                  </button>
-                  <button onClick={() => deleteCotizacion(c.id)} className="p-2 text-slate-400 hover:text-red-400 hover:bg-slate-800 rounded-lg transition-all" title="Eliminar">
-                    <Trash2 className="w-4 h-4" />
-                  </button>
+                <div className="flex items-center gap-3">
+                  <div className="text-right">
+                    {Number(c.precio_total) > 0 ? (
+                      <>
+                        <div className="text-xs text-slate-400">Diferencia a abonar</div>
+                        {c.tiene_descuento && c.precio_original && c.precio_original > c.precio_total && (
+                          <div className="text-[10px] text-slate-500 line-through">{formatCurrency(Number(c.precio_original))}</div>
+                        )}
+                        <div className="text-lg font-semibold text-amber-400">{formatCurrency(Number(c.precio_total))}</div>
+                      </>
+                    ) : (
+                      <>
+                        <div className="text-xs text-slate-400">Cobertura</div>
+                        <div className="text-sm font-semibold text-emerald-400">Cubierto 100%</div>
+                      </>
+                    )}
+                    <div className="text-xs text-slate-500 mt-0.5">
+                      {new Date(c.creado_en).toLocaleDateString('es-AR', { timeZone: 'America/Argentina/Buenos_Aires' })}
+                    </div>
+                  </div>
+                  <div className="flex gap-1 ml-3 pl-3 border-l border-slate-800">
+                    <button onClick={() => {
+                      generarDocumentoPDF({
+                          fecha: new Date(c.creado_en).toLocaleDateString('es-AR'),
+                          cliente_nombre: c.cliente_nombre,
+                          modalidad_pago: c.modalidad_pago,
+                          edad_mayor: c.edad_mayor,
+                          edades_adherentes: c.edades_hijos || [],
+                          obra_social: c.obra_social,
+                          nombre_plan: c.nombre_plan,
+                          precio_original: c.precio_original || c.precio_total, 
+                          tiene_descuento: c.tiene_descuento,
+                          descuento_tipo: c.descuento_tipo,
+                          descuento_valor: c.descuento_valor,
+                          precio_total: c.precio_total
+                      });
+                    }} className="p-2 text-slate-400 hover:text-blue-400 hover:bg-slate-800 rounded-lg transition-all" title="Descargar PDF">
+                      <FilePdfIcon className="w-4 h-4" />
+                    </button>
+                    <button onClick={() => openEdit(c)} className="p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition-all" title="Editar">
+                      <Pencil className="w-4 h-4" />
+                    </button>
+                    <button onClick={() => deleteCotizacion(c.id)} className="p-2 text-slate-400 hover:text-red-400 hover:bg-slate-800 rounded-lg transition-all" title="Eliminar">
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
                 </div>
               </div>
+              
+              <div className="flex flex-wrap gap-1.5 mt-3 pt-3 border-t border-slate-800">
+                {ETAPAS.map((etapa) => (
+                  <button
+                    key={etapa}
+                    onClick={() => changeEtapa(c, etapa)}
+                    className={`text-xs px-2.5 py-1 rounded-md transition-all ${c.etapa === etapa ? ETAPA_COLORS[etapa] : 'bg-slate-800/40 text-slate-500 hover:text-slate-300'}`}
+                  >
+                    {etapa}
+                  </button>
+                ))}
+              </div>
+
+              {/* SECCIÓN CHECKLIST SOLO PARA CERRADO GANADO */}
+              {c.etapa === 'Cerrado ganado' && (
+                <div className="mt-4 pt-4 border-t border-slate-800/50">
+                  <div className="bg-emerald-950/20 border border-emerald-900/50 rounded-xl p-4">
+                    <h4 className="text-sm font-semibold text-emerald-400 mb-3 flex items-center gap-2">
+                      <ListChecks className="w-4 h-4" /> Checklist de Alta (Documentación requerida)
+                    </h4>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-y-2 gap-x-4">
+                      {docsToAsk.map((doc, idx) => (
+                        <label key={idx} className="flex items-start gap-2.5 text-xs text-slate-300 cursor-pointer hover:text-emerald-300 transition-colors group">
+                          <input 
+                            type="checkbox" 
+                            checked={currentChecklist.includes(doc)}
+                            onChange={() => toggleChecklistItem(c.id, currentChecklist, doc)}
+                            className="mt-0.5 rounded border-slate-600 bg-slate-800 text-emerald-500 focus:ring-emerald-500/50 cursor-pointer" 
+                          />
+                          <span className="leading-tight pt-0.5 group-hover:font-medium">{doc}</span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
-            <div className="flex flex-wrap gap-1.5 mt-3 pt-3 border-t border-slate-800">
-              {ETAPAS.map((etapa) => (
-                <button
-                  key={etapa}
-                  onClick={() => changeEtapa(c, etapa)}
-                  className={`text-xs px-2.5 py-1 rounded-md transition-all ${c.etapa === etapa ? ETAPA_COLORS[etapa] : 'bg-slate-800/40 text-slate-500 hover:text-slate-300'}`}
-                >
-                  {etapa}
-                </button>
-              ))}
-            </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
 
       {showForm && (
@@ -711,28 +762,23 @@ function CotizacionForm({ editing, obrasSociales, monotributo, precios, onClose,
   const grupoActual = determinarGrupo(form.edades_adherentes.length);
 
   function calcular() {
-    // Filtramos los precios según la modalidad para que no traiga siempre 'Prepago' por defecto
     const tipoPlanBuscado = form.modalidad_pago === 'Prepago' ? 'Prepago' : 'Mixto';
     const preciosFiltrados = precios.filter(p => (p as any).tipo_plan === tipoPlanBuscado);
     
     let recs = recomendarPlanes(form, obrasSociales, monotributo, preciosFiltrados);
     
-    // VALIDACIÓN ESTRICTA PARA EL PLAN 18-30
     const edadTitular = Number(form.edad_mayor) || 0;
     const esIndividual = form.edades_adherentes.length === 0;
     const esEdadValida1830 = edadTitular >= 18 && edadTitular <= 30;
 
-    // 1. Limpiamos cualquier "Plan 18-30" que venga de Supabase si no cumple las condiciones
     recs = recs.filter(r => {
       const nombreLower = (r.plan.nombre_plan || '').toLowerCase();
       if (nombreLower.includes('18-30') || nombreLower.includes('joven')) {
         return esIndividual && esEdadValida1830;
       }
-      return true; // Dejamos el resto de los planes tranquilos (1000, 2000, 3000)
+      return true;
     });
 
-    // 2. Inyección de seguridad (Por si Supabase falla o todavía no subiste el CSV).
-    // Usamos 'push' para que aparezca obligatoriamente ABAJO en la lista.
     if (esIndividual && esEdadValida1830) {
       const yaExiste1830 = recs.some(r => (r.plan.nombre_plan || '').toLowerCase().includes('18-30'));
       if (!yaExiste1830) {
@@ -915,7 +961,6 @@ function CotizacionForm({ editing, obrasSociales, monotributo, precios, onClose,
                 onChange={(e) => update('edad_mayor', Number(e.target.value))}
                 className="w-full bg-slate-800/60 border border-slate-700 rounded-lg px-4 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-blue-500/40"
               />
-              {/* NOTA DINÁMICA SOLO SI ES APTO */}
               {form.edad_mayor >= 18 && form.edad_mayor <= 30 && form.edades_adherentes.length === 0 && (
                 <p className="text-xs text-blue-400 mt-1">💡 Titular apto para el <strong>Plan 18-30</strong> ($105.000).</p>
               )}
@@ -1097,7 +1142,6 @@ function CotizacionForm({ editing, obrasSociales, monotributo, precios, onClose,
             Calcular y recomendar planes
           </button>
 
-          {/* LISTADO DE RECOMENDACIONES */}
           {recomendaciones !== null && (
             <div className="space-y-3 mt-6">
               <div className="flex items-end justify-between border-b border-slate-800 pb-2 mb-4">
