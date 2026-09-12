@@ -711,7 +711,11 @@ function CotizacionForm({ editing, obrasSociales, monotributo, precios, onClose,
   const grupoActual = determinarGrupo(form.edades_adherentes.length);
 
   function calcular() {
-    let recs = recomendarPlanes(form, obrasSociales, monotributo, precios);
+    // Filtramos los precios según la modalidad para que no traiga siempre 'Prepago' por defecto
+    const tipoPlanBuscado = form.modalidad_pago === 'Prepago' ? 'Prepago' : 'Mixto';
+    const preciosFiltrados = precios.filter(p => (p as any).tipo_plan === tipoPlanBuscado);
+    
+    let recs = recomendarPlanes(form, obrasSociales, monotributo, preciosFiltrados);
     
     // VALIDACIÓN ESTRICTA PARA EL PLAN 18-30
     const edadTitular = Number(form.edad_mayor) || 0;
