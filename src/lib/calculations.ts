@@ -49,9 +49,10 @@ export function determinarGrupo(cantidadAdherentes: number): string {
 
 // ── Aporte global calculation ──
 
-export function calcularAporteGlobalBono(montoItem: number): number {
-  if (montoItem <= 0) return 0;
-  return Math.round(((montoItem / 0.03) * 0.072) * 100) / 100;
+export function calcularAporteGlobalBono(sueldoBrutoImponible: number): number {
+  if (sueldoBrutoImponible <= 0) return 0;
+  // Calculo corregido: A la prepaga le ingresa el 9% total menos el 15% del FSR = 7.65% (0.0765)
+  return Math.round(sueldoBrutoImponible * 0.0765 * 100) / 100;
 }
 
 export function calcularAporteGlobalMonotributo(
@@ -66,11 +67,12 @@ export function calcularAporteGlobalMonotributo(
 }
 
 export function calcularAporteBono(
-  montoItem: number,
+  sueldoBrutoImponible: number,
   cantidadAdherentes: number
 ): number {
   const totalPers = totalIntegrantes(cantidadAdherentes);
-  const aporteTotal = (montoItem / 0.03) * 0.072;
+  // Calculo corregido: 7.65%
+  const aporteTotal = sueldoBrutoImponible * 0.0765;
   const aporteReal = totalPers > 1 ? aporteTotal / totalPers : aporteTotal;
   return Math.round(aporteReal * 100) / 100;
 }
@@ -127,10 +129,12 @@ export function calcularPrecioPlan(
   const desglose: string[] = [];
   let total = 0;
 
+  // 1. Calcular Titular (Siempre usa tarifa Individual)
   const precioTitular = precioPorEdad(precios, planNum, 'Individual', input.edad_mayor);
   total += precioTitular;
   desglose.push(`Titular (edad ${input.edad_mayor}): ${formatCurrency(precioTitular)}`);
 
+  // 2. Calcular Adherentes (Siempre usan tarifa Grupo Familiar)
   input.edades_adherentes.forEach((edad, i) => {
     if (edad >= 0) {
       const precioAdherente = precioPorEdad(precios, planNum, 'Grupo Familiar', edad);
@@ -138,6 +142,16 @@ export function calcularPrecioPlan(
       desglose.push(`Adherente ${i + 1} (edad ${edad}): ${formatCurrency(precioAdherente)}`);
     }
   });
+
+  // 3. Aplicar Descuento Bonificación Familiar (Solo si hay al menos 1 adherente)
+  const adherentesValidos = input.edades_adherentes.filter(edad => edad >= 0).length;
+  if (adherentesValidos > 0) {
+    if (planNum === "2000") {
+      total -= 10000;
+    } else if (planNum === "3000") {
+      total -= 15000;
+    }
+  }
 
   return { total, desglose };
 }
