@@ -3,7 +3,29 @@ import type { Cotizacion, CotizacionInput, DescuentoTipo, MonotributoCategoria, 
 export interface CalcResult {
   precioTotal: number;
   detalle: string;
+  precioOriginal?: number;
 }
+
+// ============================================================================
+// ⚙️ CONFIGURACIÓN MANUAL DE DESCUENTOS POR GRUPO FAMILIAR
+// ============================================================================
+// Dividimos los descuentos según la modalidad de pago porque Suma Salud 
+// aplica montos distintos si es Prepago o si es Mixto (Aportes).
+const DESCUENTOS_GRUPO_FAMILIAR: Record<string, Record<string, number>> = {
+  "Prepago": {
+    "1000": 10000, 
+    "2000": 10000, 
+    "3000": 10000, 
+    "18-30": 0     
+  },
+  "Mixto": {
+    "1000": 10000, 
+    "2000": 15000, // <- Acá está la regla oculta del Plan 2000 con aportes
+    "3000": 10000, 
+    "18-30": 0     
+  }
+};
+// ============================================================================
 
 // ── Argentina timezone helpers (UTC-3) ──
 
@@ -51,7 +73,6 @@ export function determinarGrupo(cantidadAdherentes: number): string {
 
 export function calcularAporteGlobalBono(sueldoBrutoImponible: number): number {
   if (sueldoBrutoImponible <= 0) return 0;
-  // Calculo corregido: A la prepaga le ingresa el 9% total menos el 15% del FSR = 7.65% (0.0765)
   return Math.round(sueldoBrutoImponible * 0.0765 * 100) / 100;
 }
 
@@ -71,27 +92,35 @@ export function calcularAporteBono(
   cantidadAdherentes: number
 ): number {
   const totalPers = totalIntegrantes(cantidadAdherentes);
-  // Calculo corregido: 7.65%
   const aporteTotal = sueldoBrutoImponible * 0.0765;
   const aporteReal = totalPers > 1 ? aporteTotal / totalPers : aporteTotal;
   return Math.round(aporteReal * 100) / 100;
 }
 
 export function calcularAporteGlobal(
-  input: CotizacionInput,
+  input: any,
   monotributo: MonotributoCategoria[]
 ): number {
-  if (input.modalidad_pago === 'Prepago') {
-    return 0;
-  }
+  let aporteTotal = 0;
+
+  // 1. Aporte del Titular
   if (input.modalidad_pago === 'Bono de sueldo') {
-    return calcularAporteGlobalBono(Number(input.bono_item_obra_social));
-  }
-  if (input.modalidad_pago === 'Monotributo') {
+    aporteTotal += calcularAporteGlobalBono(Number(input.bono_item_obra_social));
+  } else if (input.modalidad_pago === 'Monotributo') {
     const aportantes = totalIntegrantes(input.edades_adherentes.length);
-    return calcularAporteGlobalMonotributo(input.monotributo_categoria, monotributo, aportantes);
+    aporteTotal += calcularAporteGlobalMonotributo(input.monotributo_categoria, monotributo, aportantes);
   }
-  return 0;
+
+  // 2. Aporte del Cónyuge (Unificación)
+  if (input.unificar_aportes) {
+    if (input.modalidad_pago_conyuge === 'Bono de sueldo') {
+      aporteTotal += calcularAporteGlobalBono(Number(input.bono_item_obra_social_conyuge));
+    } else if (input.modalidad_pago_conyuge === 'Monotributo') {
+      aporteTotal += calcularAporteGlobalMonotributo(input.monotributo_categoria_conyuge, monotributo, 1);
+    }
+  }
+
+  return Math.round(aporteTotal * 100) / 100;
 }
 
 // ── New Suma Salud per-person pricing engine ──
@@ -129,12 +158,12 @@ export function calcularPrecioPlan(
   const desglose: string[] = [];
   let total = 0;
 
-  // 1. Calcular Titular (Siempre usa tarifa Individual)
+  // 1. Calcular Titular
   const precioTitular = precioPorEdad(precios, planNum, 'Individual', input.edad_mayor);
   total += precioTitular;
   desglose.push(`Titular (edad ${input.edad_mayor}): ${formatCurrency(precioTitular)}`);
 
-  // 2. Calcular Adherentes (Siempre usan tarifa Grupo Familiar)
+  // 2. Calcular Adherentes
   input.edades_adherentes.forEach((edad, i) => {
     if (edad >= 0) {
       const precioAdherente = precioPorEdad(precios, planNum, 'Grupo Familiar', edad);
@@ -143,13 +172,18 @@ export function calcularPrecioPlan(
     }
   });
 
-  // 3. Aplicar Descuento Bonificación Familiar (Solo si hay al menos 1 adherente)
+  // 3. Aplicar Descuento Bonificación Familiar
   const adherentesValidos = input.edades_adherentes.filter(edad => edad >= 0).length;
+  
   if (adherentesValidos > 0) {
-    if (planNum === "2000") {
-      total -= 10000;
-    } else if (planNum === "3000") {
-      total -= 15000;
+    // Definimos si el cálculo base es Prepago o Mixto para ir a la tabla correcta
+    const tipoDescuento = (input.modalidad_pago === 'Prepago' && !(input as any).unificar_aportes) ? 'Prepago' : 'Mixto';
+    
+    // Buscamos el descuento en la matriz superior
+    const descuentoAplicable = DESCUENTOS_GRUPO_FAMILIAR[tipoDescuento]?.[planNum];
+    
+    if (descuentoAplicable) {
+      total -= descuentoAplicable;
     }
   }
 
@@ -206,7 +240,7 @@ export function recomendarPlanes(
   const aporteGlobal = calcularAporteGlobal(input, monotributo);
   const compatibles = obrasSociales.filter((o) => pasaFiltrosSumaSalud(o, input));
 
-  const resultados: PlanRecomendado[] = [];
+  const resultados: any[] = [];
 
   for (const plan of compatibles) {
     const { total, desglose } = calcularPrecioPlan(input, plan, precios);
@@ -226,6 +260,7 @@ export function recomendarPlanes(
 
     resultados.push({
       plan,
+      precioOriginal: total,
       precioTotal: total,
       aporteGlobal,
       subtotalBase,
@@ -241,7 +276,7 @@ export function recomendarPlanes(
     return a.diferencia - b.diferencia;
   });
 
-  return resultados;
+  return resultados as PlanRecomendado[];
 }
 
 export function calcularCotizacion(
@@ -269,6 +304,7 @@ export function calcularCotizacion(
   detalle += ` | Aporte global: ${formatCurrency(aporteGlobal)} | Subtotal base: ${formatCurrency(subtotalBase)} | Diferencia a pagar: ${formatCurrency(precioTotal)}`;
 
   return {
+    precioOriginal: total,
     precioTotal,
     detalle,
   };
@@ -281,4 +317,4 @@ export function formatCurrency(value: number): string {
     minimumFractionDigits: 0,
     maximumFractionDigits: 0,
   }).format(value);
-}
+}S

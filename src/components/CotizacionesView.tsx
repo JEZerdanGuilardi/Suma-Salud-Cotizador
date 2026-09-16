@@ -380,7 +380,6 @@ export function CotizacionesView({ cotizaciones, onReload, hideMetrics = false }
     } catch (err) { console.error("Error inesperado:", err); }
   }
 
-  // NUEVA FUNCIÓN: Sincroniza la checklist en tiempo real con Supabase
   async function toggleChecklistItem(id: string, currentChecklist: any, docItem: string) {
     const current = Array.isArray(currentChecklist) ? currentChecklist : [];
     const newChecklist = current.includes(docItem)
@@ -502,7 +501,6 @@ export function CotizacionesView({ cotizaciones, onReload, hideMetrics = false }
           </div>
         )}
         {filtered.map((c) => {
-          // Lógica de Checklist dinámica
           const docsToAsk = [
             "DNI titular (Frente y Dorso)",
             "Comprobante de pago (Mes bienvenida)",
@@ -594,7 +592,6 @@ export function CotizacionesView({ cotizaciones, onReload, hideMetrics = false }
                 ))}
               </div>
 
-              {/* SECCIÓN CHECKLIST SOLO PARA CERRADO GANADO */}
               {c.etapa === 'Cerrado ganado' && (
                 <div className="mt-4 pt-4 border-t border-slate-800/50">
                   <div className="bg-emerald-950/20 border border-emerald-900/50 rounded-xl p-4">
@@ -669,8 +666,16 @@ interface AdherenteItem {
   incluidoMonotributo: boolean;
 }
 
+// Extensión temporal de la interfaz para incluir los campos del cónyuge (si no están en types.ts)
+interface ExtendedCotizacionInput extends CotizacionInput {
+  unificar_aportes?: boolean;
+  modalidad_pago_conyuge?: ModalidadPago;
+  bono_item_obra_social_conyuge?: number;
+  monotributo_categoria_conyuge?: string;
+}
+
 function CotizacionForm({ editing, obrasSociales, monotributo, precios, onClose, onSaved }: FormProps) {
-  const [form, setForm] = useState<CotizacionInput>({
+  const [form, setForm] = useState<ExtendedCotizacionInput>({
     edad_mayor: editing?.edad_mayor ?? 30,
     edades_adherentes: editing ? edadesAdherentesFromCotizacion(editing) : [],
     aplica_afinidad: editing?.aplica_afinidad ?? false,
@@ -687,6 +692,11 @@ function CotizacionForm({ editing, obrasSociales, monotributo, precios, onClose,
     nombre_plan: editing?.nombre_plan ?? '',
     cliente_nombre: editing?.cliente_nombre ?? '',
     notas: editing?.notas ?? '',
+    // Nuevos campos para unificación
+    unificar_aportes: (editing as any)?.unificar_aportes ?? false,
+    modalidad_pago_conyuge: (editing as any)?.modalidad_pago_conyuge ?? 'Bono de sueldo',
+    bono_item_obra_social_conyuge: (editing as any)?.bono_item_obra_social_conyuge ?? 0,
+    monotributo_categoria_conyuge: (editing as any)?.monotributo_categoria_conyuge ?? 'A',
   });
 
   const [adherentesDetalle, setAdherentesDetalle] = useState<AdherenteItem[]>(() => {
@@ -698,7 +708,7 @@ function CotizacionForm({ editing, obrasSociales, monotributo, precios, onClose,
   const [recomendaciones, setRecomendaciones] = useState<PlanRecomendado[] | null>(null);
   const [selectedRec, setSelectedRec] = useState<PlanRecomendado | null>(null);
 
-  function update<K extends keyof CotizacionInput>(key: K, value: CotizacionInput[K]) {
+  function update<K extends keyof ExtendedCotizacionInput>(key: K, value: ExtendedCotizacionInput[K]) {
     setForm((f) => ({ ...f, [key]: value }));
     if (key !== 'cliente_nombre' && key !== 'notas') {
       setRecomendaciones(null);
@@ -708,7 +718,7 @@ function CotizacionForm({ editing, obrasSociales, monotributo, precios, onClose,
 
   function addAdherente() {
     setAdherentesDetalle(prev => [...prev, { edad: 0, incluidoMonotributo: false }]);
-    setForm((f) => ({ ...f, edades_adherentes: [...f.edades_adherentes, 0] }));
+    setForm((f) => ({ ...f, edades_adherentes: [...(f.edades_adherentes || []), 0] }));
     setRecomendaciones(null);
     setSelectedRec(null);
   }
@@ -720,7 +730,7 @@ function CotizacionForm({ editing, obrasSociales, monotributo, precios, onClose,
       return nuevas;
     });
     setForm((f) => {
-      const nuevas = [...f.edades_adherentes];
+      const nuevas = [...(f.edades_adherentes || [])];
       nuevas[index] = edad;
       return { ...f, edades_adherentes: nuevas };
     });
@@ -742,33 +752,49 @@ function CotizacionForm({ editing, obrasSociales, monotributo, precios, onClose,
     setAdherentesDetalle(prev => prev.filter((_, i) => i !== index));
     setForm((f) => ({
       ...f,
-      edades_adherentes: f.edades_adherentes.filter((_, i) => i !== index),
+      edades_adherentes: (f.edades_adherentes || []).filter((_, i) => i !== index),
     }));
     setRecomendaciones(null);
     setSelectedRec(null);
   }
 
+  // --- CÁLCULO DE APORTES (TITULAR + CÓNYUGE) ---
   const catMonotributoSeleccionada = monotributo.find(m => m.categoria === form.monotributo_categoria);
   const valorAporteUnitario = catMonotributoSeleccionada ? catMonotributoSeleccionada.aporte_titular : 0;
   const cantidadAportantesManual = 1 + adherentesDetalle.filter(a => a.incluidoMonotributo).length;
   
   let aporteGlobalPersonalizado = 0;
+  
+  // 1. Aporte Titular
   if (form.modalidad_pago === 'Monotributo') {
-    aporteGlobalPersonalizado = valorAporteUnitario * cantidadAportantesManual;
+    aporteGlobalPersonalizado += valorAporteUnitario * cantidadAportantesManual;
   } else if (form.modalidad_pago === 'Bono de sueldo') {
-    aporteGlobalPersonalizado = form.bono_item_obra_social > 0 ? (form.bono_item_obra_social / 0.03) * 0.0765 : 0;
+    aporteGlobalPersonalizado += (form.bono_item_obra_social || 0) > 0 ? (form.bono_item_obra_social! / 0.03) * 0.0765 : 0;
   }
 
-  const grupoActual = determinarGrupo(form.edades_adherentes.length);
+  // 2. Aporte Cónyuge (Si se unifican aportes)
+  if (form.unificar_aportes) {
+    if (form.modalidad_pago_conyuge === 'Monotributo') {
+       const catConyuge = monotributo.find(m => m.categoria === form.monotributo_categoria_conyuge);
+       const valorConyuge = catConyuge ? Number(catConyuge.aporte_titular) : 0;
+       aporteGlobalPersonalizado += valorConyuge; // Solo se cuenta a la persona
+    } else if (form.modalidad_pago_conyuge === 'Bono de sueldo') {
+       aporteGlobalPersonalizado += (form.bono_item_obra_social_conyuge || 0) > 0 ? (form.bono_item_obra_social_conyuge! / 0.03) * 0.0765 : 0;
+    }
+  }
+
+  const grupoActual = determinarGrupo(form.edades_adherentes?.length || 0);
 
   function calcular() {
-    const tipoPlanBuscado = form.modalidad_pago === 'Prepago' ? 'Prepago' : 'Mixto';
+    // Si la modalidad del titular NO es prepaga o si se unifican aportes con recibo, consideramos los precios Mixtos
+    const usaPreciosMixtos = form.modalidad_pago !== 'Prepago' || form.unificar_aportes;
+    const tipoPlanBuscado = usaPreciosMixtos ? 'Mixto' : 'Prepago';
     const preciosFiltrados = precios.filter(p => (p as any).tipo_plan === tipoPlanBuscado);
     
-    let recs = recomendarPlanes(form, obrasSociales, monotributo, preciosFiltrados);
+    let recs = recomendarPlanes(form as CotizacionInput, obrasSociales, monotributo, preciosFiltrados);
     
     const edadTitular = Number(form.edad_mayor) || 0;
-    const esIndividual = form.edades_adherentes.length === 0;
+    const esIndividual = (form.edades_adherentes?.length || 0) === 0;
     const esEdadValida1830 = edadTitular >= 18 && edadTitular <= 30;
 
     recs = recs.filter(r => {
@@ -802,16 +828,16 @@ function CotizacionForm({ editing, obrasSociales, monotributo, precios, onClose,
       let base = rec.precioTotal;
       let subtotal = base;
 
-      if (form.modalidad_pago === 'Monotributo' || form.modalidad_pago === 'Bono de sueldo') {
+      if (usaPreciosMixtos) {
         subtotal = Math.max(0, base - aporteGlobalPersonalizado);
       }
 
       let descuentoMonto = 0;
-      if (form.tiene_descuento && form.descuento_valor > 0) {
+      if (form.tiene_descuento && form.descuento_valor! > 0) {
         if (form.descuento_tipo === 'porcentaje') {
-          descuentoMonto = subtotal * (form.descuento_valor / 100);
+          descuentoMonto = subtotal * (form.descuento_valor! / 100);
         } else {
-          descuentoMonto = form.descuento_valor;
+          descuentoMonto = form.descuento_valor!;
         }
       }
 
@@ -819,15 +845,15 @@ function CotizacionForm({ editing, obrasSociales, monotributo, precios, onClose,
       let mensaje = '';
       let alcanza = true;
 
-      if (form.modalidad_pago === 'Prepago' && form.prepago_presupuesto > 0) {
-        let diffPresupuesto = form.prepago_presupuesto - diferenciaFinal;
+      if (!usaPreciosMixtos && form.prepago_presupuesto! > 0) {
+        let diffPresupuesto = form.prepago_presupuesto! - diferenciaFinal;
         if (diffPresupuesto >= 0) {
           mensaje = `A favor: Le sobran $${diffPresupuesto.toLocaleString('es-AR')}`;
         } else {
           mensaje = `Diferencia a pagar: $${Math.abs(diffPresupuesto).toLocaleString('es-AR')}`;
           alcanza = false;
         }
-      } else if (form.modalidad_pago !== 'Prepago') {
+      } else if (usaPreciosMixtos) {
          alcanza = aporteGlobalPersonalizado >= base;
       }
 
@@ -864,7 +890,7 @@ function CotizacionForm({ editing, obrasSociales, monotributo, precios, onClose,
     const payload = {
       edad_mayor: form.edad_mayor,
       tiene_conyuge: false,
-      cantidad_hijos: form.edades_adherentes.length,
+      cantidad_hijos: form.edades_adherentes?.length || 0,
       edad_conyuge: null,
       edades_hijos: form.edades_adherentes,
       es_jubilado: false,
@@ -874,6 +900,12 @@ function CotizacionForm({ editing, obrasSociales, monotributo, precios, onClose,
       bono_item_obra_social: form.bono_item_obra_social,
       monotributo_categoria: form.monotributo_categoria,
       prepago_presupuesto: form.prepago_presupuesto,
+      // Los agregamos al payload (OJO: Supabase necesita estas columnas creadas para que no falle)
+      unificar_aportes: form.unificar_aportes,
+      modalidad_pago_conyuge: form.modalidad_pago_conyuge,
+      bono_item_obra_social_conyuge: form.bono_item_obra_social_conyuge,
+      monotributo_categoria_conyuge: form.monotributo_categoria_conyuge,
+      
       etapa: editing?.etapa ?? 'Nuevo',
       plan_id: selectedRec.plan.id,
       obra_social: selectedRec.plan.obra_social,
@@ -897,7 +929,7 @@ function CotizacionForm({ editing, obrasSociales, monotributo, precios, onClose,
       saveError = error?.message ?? null;
     }
     setSaving(false);
-    if (saveError) alert(`Error al guardar: ${saveError}`);
+    if (saveError) alert(`Error al guardar: ${saveError} (Si dice 'column does not exist', debes agregar las columnas de conyuge en Supabase)`);
     else onSaved();
   }
 
@@ -915,10 +947,13 @@ function CotizacionForm({ editing, obrasSociales, monotributo, precios, onClose,
         </div>
 
         <div className="p-6 space-y-5">
-          {(form.modalidad_pago === 'Monotributo' || (form.modalidad_pago === 'Bono de sueldo' && form.bono_item_obra_social > 0)) && (
-            <div className="text-sm text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 rounded-lg px-4 py-3 flex items-center gap-2">
-              <DollarSign className="w-4 h-4 flex-shrink-0" />
-              <span>Aporte global: <span className="font-bold text-base">{formatCurrency(aporteGlobalPersonalizado)}</span></span>
+          {(form.modalidad_pago !== 'Prepago' || form.unificar_aportes) && (
+            <div className="text-sm text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 rounded-lg px-4 py-3 flex items-center justify-between gap-2 shadow-inner">
+              <div className="flex items-center gap-2">
+                <DollarSign className="w-5 h-5 flex-shrink-0" />
+                <span className="font-medium">Total de aportes a descontar:</span>
+              </div>
+              <span className="font-extrabold text-lg text-emerald-300">{formatCurrency(aporteGlobalPersonalizado)}</span>
             </div>
           )}
 
@@ -933,21 +968,116 @@ function CotizacionForm({ editing, obrasSociales, monotributo, precios, onClose,
             />
           </div>
 
-          <div>
-            <label className="block text-sm text-slate-300 mb-1.5">Modalidad de pago</label>
-            <div className="grid grid-cols-3 gap-2">
-              {(['Prepago', 'Monotributo', 'Bono de sueldo'] as ModalidadPago[]).map((m) => (
-                <button
-                  key={m}
-                  onClick={() => update('modalidad_pago', m)}
-                  className={`py-2.5 rounded-lg text-sm font-medium transition-all ${
-                    form.modalidad_pago === m ? 'bg-blue-600 text-white shadow-md' : 'bg-slate-800/60 text-slate-400 hover:text-white border border-slate-700'
-                  }`}
-                >
-                  {m}
-                </button>
-              ))}
+          <div className="bg-slate-800/20 border border-slate-800 rounded-xl p-4 space-y-4">
+            <div>
+              <label className="block text-sm text-slate-300 mb-1.5">Modalidad de pago (Titular)</label>
+              <div className="grid grid-cols-3 gap-2">
+                {(['Prepago', 'Monotributo', 'Bono de sueldo'] as ModalidadPago[]).map((m) => (
+                  <button
+                    key={m}
+                    onClick={() => update('modalidad_pago', m)}
+                    className={`py-2 rounded-lg text-sm font-medium transition-all ${
+                      form.modalidad_pago === m ? 'bg-blue-600 text-white shadow-md' : 'bg-slate-800/60 text-slate-400 hover:text-white border border-slate-700'
+                    }`}
+                  >
+                    {m}
+                  </button>
+                ))}
+              </div>
             </div>
+
+            {form.modalidad_pago === 'Monotributo' && (
+              <div>
+                <label className="block text-xs text-slate-400 mb-1">Categoría del Titular</label>
+                <select
+                  value={form.monotributo_categoria}
+                  onChange={(e) => update('monotributo_categoria', e.target.value)}
+                  className="w-full bg-slate-800/60 border border-slate-700 rounded-lg px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-blue-500/40 text-sm"
+                >
+                  {monotributo.map((m) => (
+                    <option key={m.id} value={m.categoria}>
+                      Cat {m.categoria} - {formatCurrency(m.aporte_titular)}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+
+            {form.modalidad_pago === 'Bono de sueldo' && (
+              <div>
+                <label className="block text-xs text-slate-400 mb-1">Ítem obra social en recibo del Titular ($)</label>
+                <input
+                  type="number"
+                  min={0}
+                  value={form.bono_item_obra_social}
+                  onChange={(e) => update('bono_item_obra_social', Number(e.target.value))}
+                  className="w-full bg-slate-800/60 border border-slate-700 rounded-lg px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-blue-500/40 text-sm"
+                />
+              </div>
+            )}
+          </div>
+
+          <div className="bg-slate-800/20 border border-slate-800 rounded-xl p-4 space-y-4">
+            <label className="flex items-center gap-2 text-sm font-medium text-slate-200 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={form.unificar_aportes}
+                onChange={(e) => update('unificar_aportes', e.target.checked)}
+                className="w-5 h-5 rounded border-slate-600 bg-slate-800 text-blue-500 focus:ring-blue-500/50 cursor-pointer"
+              />
+              ¿Unificar aportes con el cónyuge?
+            </label>
+
+            {form.unificar_aportes && (
+              <div className="pt-3 border-t border-slate-700/50 space-y-4 animate-in fade-in slide-in-from-top-2">
+                <div>
+                  <label className="block text-xs text-slate-400 mb-1.5">Modalidad de pago (Cónyuge)</label>
+                  <div className="grid grid-cols-2 gap-2">
+                    {(['Monotributo', 'Bono de sueldo'] as ModalidadPago[]).map((m) => (
+                      <button
+                        key={m}
+                        onClick={() => update('modalidad_pago_conyuge', m)}
+                        className={`py-2 rounded-lg text-sm font-medium transition-all ${
+                          form.modalidad_pago_conyuge === m ? 'bg-sky-600 text-white shadow-md' : 'bg-slate-800/60 text-slate-400 hover:text-white border border-slate-700'
+                        }`}
+                      >
+                        {m}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {form.modalidad_pago_conyuge === 'Monotributo' && (
+                  <div>
+                    <label className="block text-xs text-slate-400 mb-1">Categoría del Cónyuge</label>
+                    <select
+                      value={form.monotributo_categoria_conyuge}
+                      onChange={(e) => update('monotributo_categoria_conyuge', e.target.value)}
+                      className="w-full bg-slate-800/60 border border-slate-700 rounded-lg px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-sky-500/40 text-sm"
+                    >
+                      {monotributo.map((m) => (
+                        <option key={m.id} value={m.categoria}>
+                          Cat {m.categoria} - {formatCurrency(m.aporte_titular)}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+
+                {form.modalidad_pago_conyuge === 'Bono de sueldo' && (
+                  <div>
+                    <label className="block text-xs text-slate-400 mb-1">Ítem obra social en recibo del Cónyuge ($)</label>
+                    <input
+                      type="number"
+                      min={0}
+                      value={form.bono_item_obra_social_conyuge}
+                      onChange={(e) => update('bono_item_obra_social_conyuge', Number(e.target.value))}
+                      className="w-full bg-slate-800/60 border border-slate-700 rounded-lg px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-sky-500/40 text-sm"
+                    />
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
           <div className="grid grid-cols-2 gap-4">
@@ -961,14 +1091,11 @@ function CotizacionForm({ editing, obrasSociales, monotributo, precios, onClose,
                 onChange={(e) => update('edad_mayor', Number(e.target.value))}
                 className="w-full bg-slate-800/60 border border-slate-700 rounded-lg px-4 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-blue-500/40"
               />
-              {form.edad_mayor >= 18 && form.edad_mayor <= 30 && form.edades_adherentes.length === 0 && (
-                <p className="text-xs text-blue-400 mt-1">💡 Titular apto para el <strong>Plan 18-30</strong> ($105.000).</p>
-              )}
             </div>
             
-            {form.modalidad_pago === 'Prepago' && (
+            {!form.unificar_aportes && form.modalidad_pago === 'Prepago' && (
               <div>
-                <label className="block text-sm text-slate-300 mb-1.5">Presupuesto que busca ($)</label>
+                <label className="block text-sm text-slate-300 mb-1.5">Presupuesto ($)</label>
                 <input
                   type="number"
                   min={0}
@@ -983,7 +1110,7 @@ function CotizacionForm({ editing, obrasSociales, monotributo, precios, onClose,
 
           <div className="space-y-3">
             <div className="flex items-center justify-between gap-3">
-              <label className="text-sm text-slate-300">Adherentes</label>
+              <label className="text-sm text-slate-300">Adherentes (Cónyuge e hijos)</label>
               <button
                 type="button"
                 onClick={addAdherente}
@@ -998,7 +1125,7 @@ function CotizacionForm({ editing, obrasSociales, monotributo, precios, onClose,
             <div className="space-y-2">
               {adherentesDetalle.map((adh, i) => (
                 <div key={i} className="flex items-center gap-3 bg-slate-950/40 p-2.5 rounded-xl border border-slate-800">
-                  <label className="text-xs text-slate-400 w-24 flex-shrink-0">Adherente {i + 1}</label>
+                  <label className="text-xs text-slate-400 w-24 flex-shrink-0">Miembro {i + 1}</label>
                   <input
                     type="number"
                     min={0}
@@ -1017,7 +1144,7 @@ function CotizacionForm({ editing, obrasSociales, monotributo, precios, onClose,
                         onChange={() => toggleAdherenteMonotributo(i)}
                         className="rounded bg-slate-800 border-slate-600 text-blue-500 w-4 h-4 cursor-pointer"
                       />
-                      Incluido en Monotributo
+                      En el Monotributo del titular
                     </label>
                   )}
 
@@ -1038,45 +1165,9 @@ function CotizacionForm({ editing, obrasSociales, monotributo, precios, onClose,
             <Users className="w-4 h-4 text-blue-400 flex-shrink-0" />
             <span>
               Grupo: <span className="text-slate-200 font-medium">{grupoActual}</span>
-              {' · '}{familyStructureLabel(form.edades_adherentes.length)}
+              {' · '}{familyStructureLabel(form.edades_adherentes?.length || 0)}
             </span>
           </div>
-
-          {form.modalidad_pago === 'Monotributo' && (
-            <div>
-              <label className="block text-sm text-slate-300 mb-1.5">Categoría de monotributo</label>
-              <select
-                value={form.monotributo_categoria}
-                onChange={(e) => update('monotributo_categoria', e.target.value)}
-                className="w-full bg-slate-800/60 border border-slate-700 rounded-lg px-4 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-blue-500/40"
-              >
-                {monotributo.map((m) => (
-                  <option key={m.id} value={m.categoria}>
-                    Categoría {m.categoria} - Aporte unitario: {formatCurrency(m.aporte_titular)}
-                  </option>
-                ))}
-              </select>
-              <div className="text-xs text-slate-400 mt-1">
-                Titular (1) + {adherentesDetalle.filter(a => a.incluidoMonotributo).length} adherente(s) tildado(s) × aporte unitario
-              </div>
-            </div>
-          )}
-
-          {form.modalidad_pago === 'Bono de sueldo' && (
-            <div>
-              <label className="block text-sm text-slate-300 mb-1.5">Ítem obra social en recibo ($)</label>
-              <input
-                type="number"
-                min={0}
-                value={form.bono_item_obra_social}
-                onChange={(e) => update('bono_item_obra_social', Number(e.target.value))}
-                className="w-full bg-slate-800/60 border border-slate-700 rounded-lg px-4 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-blue-500/40"
-              />
-              <p className="text-xs text-slate-500 mt-1">
-                Fórmula de descuento de aportes: (Monto / 0.03) × 0.0765
-              </p>
-            </div>
-          )}
 
           <div>
             <label className="block text-sm text-slate-300 mb-1.5">Notas (opcional)</label>
@@ -1146,11 +1237,6 @@ function CotizacionForm({ editing, obrasSociales, monotributo, precios, onClose,
             <div className="space-y-3 mt-6">
               <div className="flex items-end justify-between border-b border-slate-800 pb-2 mb-4">
                 <h3 className="text-sm font-semibold text-white">Planes recomendados</h3>
-                {(form.modalidad_pago === 'Monotributo' || form.modalidad_pago === 'Bono de sueldo') && (
-                  <div className="text-xs text-slate-400">
-                    Aporte global: {formatCurrency(aporteGlobalPersonalizado)}
-                  </div>
-                )}
               </div>
 
               {recomendaciones.length === 0 ? (
@@ -1168,11 +1254,7 @@ function CotizacionForm({ editing, obrasSociales, monotributo, precios, onClose,
                       key={rec.plan.id}
                       onClick={() => seleccionarPlan(rec)}
                       className={`w-full text-left p-4 rounded-xl border transition-all ${
-                        isSelected ? 'ring-2 ring-blue-500/50' : 'hover:border-slate-500'
-                      } ${
-                        isCubierto 
-                          ? 'bg-[#061f1c] border-[#0f3d35]' 
-                          : 'bg-slate-900/40 border-slate-700'
+                        isSelected ? 'ring-2 ring-blue-500/50 bg-slate-800/80' : 'hover:border-slate-500 bg-slate-900/40 border-slate-700'
                       }`}
                     >
                       <div className="flex items-start justify-between gap-3">
@@ -1189,20 +1271,20 @@ function CotizacionForm({ editing, obrasSociales, monotributo, precios, onClose,
                         </div>
                         <div className="text-right flex flex-col items-end justify-center">
                           {form.tiene_descuento && (rec as any).descuento_monto_calculado > 0 && !isCubierto && (
-                            <div className="text-[11px] text-slate-500 line-through mb-0.5">
+                            <div className="text-xs text-slate-500 line-through mb-0.5">
                               {formatCurrency((rec as any).subtotal_calculado)}
                             </div>
                           )}
                           
-                          <div className="text-lg font-bold text-white">
+                          <div className="text-xl font-bold text-amber-400">
                             {isCubierto ? '$ 0' : formatCurrency(rec.diferencia)}
                           </div>
                           
                           {isCubierto ? (
                             <div className="text-[10px] text-emerald-400 font-medium mt-0.5">Cubierto 100%</div>
                           ) : (
-                            <div className="text-[10px] text-amber-500 font-medium mt-0.5">
-                              Diferencia a pagar: {formatCurrency(rec.diferencia)}
+                            <div className="text-[10px] text-amber-500/80 font-medium mt-0.5">
+                              Diferencia a abonar
                             </div>
                           )}
                         </div>
@@ -1239,7 +1321,7 @@ function CotizacionForm({ editing, obrasSociales, monotributo, precios, onClose,
                 className="flex-1 bg-slate-800 hover:bg-slate-700 text-white text-sm font-medium py-2.5 rounded-lg transition-all border border-slate-700 flex items-center justify-center gap-2 shadow-md"
               >
                 <FilePdfIcon className="w-4 h-4 text-blue-400" />
-                Descargar Presupuesto
+                Descargar PDF
               </button>
 
               <button
