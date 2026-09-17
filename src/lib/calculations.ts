@@ -20,7 +20,7 @@ const DESCUENTOS_GRUPO_FAMILIAR: Record<string, Record<string, number>> = {
   },
   "Mixto": {
     "1000": 0, 
-    "2000": 15000, // <- Acá está la regla oculta del Plan 2000 con aportes
+    "2000": 10000, // <- Acá está la regla oculta del Plan 2000 con aportes
     "3000": 15000, 
     "18-30": 0     
   }
